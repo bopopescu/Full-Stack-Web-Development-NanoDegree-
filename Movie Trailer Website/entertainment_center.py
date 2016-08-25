@@ -22,10 +22,14 @@ inception = media.Movie("Inception", "DiCaprio is fighting the rules of time and
                         "http://www.warnerbros.com/sites/default/files/inception_keyart.jpg",
                         "https://www.youtube.com/watch?v=YoHD9XEInc0")
 
-game_of_thrones = media.Movie("Game of Thrones", "Alcohol, sex, and blood - Winter is coming",
+game_of_thrones = media.Movie("Game of Thrones", "Alcohol, intercourse, and blood - Winter is coming",
                               "https://pbs.twimg.com/profile_images/702545332475981824/Mg7TpOaw.jpg",
                               "https://www.youtube.com/watch?v=EI0ib1NErqg")
 
-movies = [toy_story, avatar, house_of_cards, narcos, inception, game_of_thrones]
+intouchable= media.Movie("1+1 Intouchable", "Best movie about friendship and courage",
+                              "http://ia.media-imdb.com/images/M/MV5BMTYxNDA3MDQwNl5BMl5BanBnXkFtZTcwNTU4Mzc1Nw@@._V1_UY1200_CR90,0,630,1200_AL_.jpg",
+                              "https://www.youtube.com/watch?v=34WIbmXkewU")
+
+movies = [toy_story, avatar, house_of_cards, narcos, inception, game_of_thrones, intouchable ]
 
 fresh_tomatoes.open_movies_page(movies)
