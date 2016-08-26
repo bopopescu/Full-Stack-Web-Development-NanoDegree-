@@ -10,14 +10,26 @@
 }
 
 .image {
-    max-width: 460px
+    margin-right: 20px;
+    max-width: 460px;
 }
 
 .description {
+    margin-right: 20%
     max-width: 705px
+    color: #7C8B88;
+    font-family: Verdana, Geneva, sans-serif;
+    font-weight: lighter;
 }
 
 .app {
     display: -webkit-flex;
     display: flex;
+}
+
+.title {
+    background-color: #33BEBE;
+    color: white;
+    font-family: Verdana, Geneva, sans-serif;
+    font-weight: lighter;
 }
