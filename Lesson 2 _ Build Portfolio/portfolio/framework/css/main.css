@@ -1,18 +1,12 @@
-* {
-    border: 1px solid red !important;
-}
+/* {
+    outline: 1px solid red !important;
+} */
 
 * {
     -webkit-box-sizing: border-box;
     -moz-box-sizing: border-box;
     -ms-box-sizing: border-box;
     box-sizing: border-box;
-}
-
-@media only screen and (max-width: 500px) {
-  p {
-    background-color: blue;
-  }
 }
 
 .grid {
@@ -28,50 +22,72 @@
     flex-wrap: wrap;
 }
 
-.col-1 {
-    width: 8.33%;
+h1 { /* My Name */
+    margin: 10px;
+    color: #58595b;
+    font-size: 54px;
+    font-family: 'Lato', sans-serif;
+    font-weight: lighter;
+    text-align: right;
 }
 
-.col-2 {
-    width: 16.66%;
+h2 { /* Featured Work */
+    color: #98a4ae;
+    font-size: 36px;
+    font-family: 'Lato', sans-serif;
 }
 
-.col-3 {
-    width: 25%;
+h3 { /* Projects */
+    color: #58595b;
+    font-size: 26px;
+    font-family: 'Lato', sans-serif;
 }
 
-.col-4 {
-    width: 33.33%;
-}
-
-.col-5 {
-    width: 41.66%;
-}
-
-.col-6 {
+.logo { /* Logo Box */
     width: 50%;
 }
 
-.col-7 {
-    width: 58.33%;
+.name { /* Name Box */
+    width: 50%;
 }
 
-.col-8 {
-    width: 66.66%;
+.nameh { /* Position */
+    margin: 10px;
+    color: #58595b;
+    font-size: 26px;
+    font-family: 'Lato', sans-serif;
+    text-align: right;
 }
 
-.col-9 {
-    width: 75%;
-}
-
-.col-10 {
-    width: 83.33%;
-}
-
-.col-11 {
-    width: 91.66%;
-}
-
-.col-12 {
+.pic { /* Middle Picture */
     width: 100%;
+}
+
+.fwork { /* Featured Work Box */
+    width: 100%;
+}
+
+.fimg1 { /* Project Image 1 */
+    width: 33.33%;
+    max-width: 380px;
+    margin-right: 30px;
+    text-align: center;
+}
+
+.fimg2 { /* Project Image 2 */
+    width: 33.33%;
+    max-width: 380px;
+    margin-right: 30px;
+    text-align: center;
+}
+
+.fimg3 { /* Project Image 3 */
+    width: 33.33%;
+    max-width: 380px;
+    text-align: center;
+}
+a { /* Links */
+    color: #BCBBBB;
+    font-size: 12px;
+    ffont-family: 'Lato', sans-serif;
 }
