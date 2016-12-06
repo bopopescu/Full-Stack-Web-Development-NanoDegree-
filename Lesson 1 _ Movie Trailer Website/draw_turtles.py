@@ -23,7 +23,6 @@ def draw_flower_triangle(some_turtle):
     some_turtle.right(200)
 
 
-
 def draw_art():
     window = turtle.Screen()
     window.bgcolor("red")
@@ -50,4 +49,4 @@ def draw_art():
     # Window exit
 
 
-draw_art()
+draw_art(some_turtle)
