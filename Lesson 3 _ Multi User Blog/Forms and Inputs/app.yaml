@@ -9,5 +9,5 @@ handlers:
   script: templates.app
 
 libraries:
-- name: jinja 2
+- name: jinja2
   version: latest
