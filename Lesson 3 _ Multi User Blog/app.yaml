@@ -1,0 +1,5 @@
+entrypoint: null
+runtime: php
+runtime_config:
+  document_root: .
+vm: true
