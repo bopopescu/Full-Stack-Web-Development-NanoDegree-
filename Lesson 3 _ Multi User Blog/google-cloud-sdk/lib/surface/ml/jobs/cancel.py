@@ -16,11 +16,15 @@
 from googlecloudsdk.api_lib.ml import jobs
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.ml import flags
+from googlecloudsdk.core import resources
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
-class CancelBeta(base.Command):
-  """Cancel a running Cloud ML job."""
+class CancelBeta(base.SilentCommand):
+  """Cancel a running Cloud ML job.
+
+     *{command}* cancels a running Cloud ML job. If the job is already finished,
+     the command will not perform an operation and exit successfully.
+  """
 
   @staticmethod
   def Args(parser):
@@ -37,4 +41,5 @@ class CancelBeta(base.Command):
     Returns:
       Some value that we want to have printed later.
     """
-    return jobs.Cancel(args.job)
+    job_ref = resources.REGISTRY.Parse(args.job, collection='ml.projects.jobs')
+    return jobs.JobsClient().Cancel(job_ref)

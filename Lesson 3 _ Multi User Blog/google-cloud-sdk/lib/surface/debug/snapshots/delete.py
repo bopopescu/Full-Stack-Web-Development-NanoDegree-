@@ -18,6 +18,7 @@ import StringIO
 
 from googlecloudsdk.api_lib.debug import debug
 from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.debug import flags
 from googlecloudsdk.core import log
 from googlecloudsdk.core import properties
 from googlecloudsdk.core.console import console_io
@@ -34,13 +35,7 @@ class Delete(base.DeleteCommand):
 
   @staticmethod
   def Args(parser):
-    parser.add_argument(
-        'id_or_location_regexp', metavar='(ID|LOCATION-REGEXP)', nargs='+',
-        help="""\
-            One or more snapshot IDs, resource identifiers, or regular
-            expressions to match against snapshot locations. All snapshots
-            matching any of these values will be deleted.
-        """)
+    flags.AddIdOptions(parser, 'snapshot', 'snapshots', 'deleted')
     parser.add_argument(
         '--all-users', action='store_true', default=False,
         help="""\
@@ -60,7 +55,8 @@ class Delete(base.DeleteCommand):
     debugger = debug.Debugger(project_id)
     debuggee = debugger.FindDebuggee(args.target)
     snapshots = debuggee.ListBreakpoints(
-        args.id_or_location_regexp, include_all_users=args.all_users,
+        args.location, resource_ids=args.ids,
+        include_all_users=args.all_users,
         include_inactive=args.include_inactive,
         restrict_to_type=debugger.SNAPSHOT_TYPE)
     if snapshots:

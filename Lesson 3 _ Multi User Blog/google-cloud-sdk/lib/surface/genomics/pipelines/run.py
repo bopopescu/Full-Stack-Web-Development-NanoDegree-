@@ -14,11 +14,14 @@
 
 """Implementation of gcloud genomics pipelines run.
 """
+import argparse
+
 from googlecloudsdk.api_lib import genomics as lib
 from googlecloudsdk.api_lib.genomics import exceptions
 from googlecloudsdk.api_lib.genomics import genomics_util
 from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.util import labels_util
 from googlecloudsdk.core import log
 from googlecloudsdk.core import properties
 from googlecloudsdk.core.util import files
@@ -113,6 +116,7 @@ class Run(base.SilentCommand):
     parser.add_argument(
         '--inputs',
         category=base.COMMONLY_USED_FLAGS,
+        metavar='NAME=VALUE',
         type=arg_parsers.ArgDict(),
         action=arg_parsers.UpdateAction,
         help='''Map of input PipelineParameter names to values.
@@ -124,6 +128,7 @@ class Run(base.SilentCommand):
     parser.add_argument(
         '--inputs-from-file',
         category=base.COMMONLY_USED_FLAGS,
+        metavar='NAME=FILE',
         type=arg_parsers.ArgDict(),
         action=arg_parsers.UpdateAction,
         help='''Map of input PipelineParameter names to values.
@@ -136,6 +141,7 @@ class Run(base.SilentCommand):
     parser.add_argument(
         '--outputs',
         category=base.COMMONLY_USED_FLAGS,
+        metavar='NAME=VALUE',
         type=arg_parsers.ArgDict(),
         action=arg_parsers.UpdateAction,
         help='''Map of output PipelineParameter names to values.
@@ -153,6 +159,8 @@ class Run(base.SilentCommand):
             which must end in `.log`, in which case that path will be
             used. Stdout and stderr logs from the run are also generated and
             output as `-stdout.log` and `-stderr.log`.''')
+
+    labels_util.AddCreateLabelsFlags(parser)
 
     parser.add_argument(
         '--memory',
@@ -180,8 +188,7 @@ class Run(base.SilentCommand):
 
     parser.add_argument(
         '--run-id',
-        help='''Optional caller-specified identifier for this run of the
-             pipeline.''')
+        help=argparse.SUPPRESS)
 
     parser.add_argument(
         '--service-account-email',
@@ -191,17 +198,21 @@ class Run(base.SilentCommand):
 
     parser.add_argument(
         '--service-account-scopes',
+        metavar='SCOPE',
         type=arg_parsers.ArgList(),
         default=[],
         help='''List of additional scopes to be made available for this service
              account. The following scopes are always requested:
 
-             https://www.googleapis.com/auth/genomics
              https://www.googleapis.com/auth/compute
-             https://www.googleapis.com/auth/devstorage.full_control''')
+             https://www.googleapis.com/auth/devstorage.full_control
+             https://www.googleapis.com/auth/genomics
+             https://www.googleapis.com/auth/logging.write
+             https://www.googleapis.com/auth/monitoring.write''')
 
     parser.add_argument(
         '--zones',
+        metavar='ZONE',
         type=arg_parsers.ArgList(),
         completion_resource='compute.zones',
         help='''List of Compute Engine zones the pipeline can run in.
@@ -288,6 +299,11 @@ https://cloud.google.com/compute/docs/gcloud-compute/#set_default_zone_and_regio
                 additionalProperties=outputs),
             clientId=args.run_id,
             logging=genomics_messages.LoggingOptions(gcsPath=args.logging),
+            labels=labels_util.UpdateLabels(
+                None,
+                genomics_messages.RunPipelineArgs.LabelsValue,
+                labels_util.GetUpdateLabelsDictFromArgs(args),
+                None),
             projectId=genomics_util.GetProjectId(),
             serviceAccount=genomics_messages.ServiceAccount(
                 email=args.service_account_email,

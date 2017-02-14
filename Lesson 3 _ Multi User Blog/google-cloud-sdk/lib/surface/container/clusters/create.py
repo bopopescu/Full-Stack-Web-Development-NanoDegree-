@@ -26,6 +26,7 @@ from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.command_lib.container import flags
+from googlecloudsdk.command_lib.container import messages
 from googlecloudsdk.core import log
 from googlecloudsdk.core.console import console_io
 
@@ -76,9 +77,7 @@ Multiple locations can be specified, separated by commas. For example:
       help='The name of the Google Compute Engine subnetwork '
       '(https://cloud.google.com/compute/docs/subnetworks) to which the '
       'cluster is connected. If specified, the cluster\'s network must be a '
-      '"custom subnet" network. Specification of subnetworks is an '
-      'alpha feature, and requires that the '
-      'Google Compute Engine alpha API be enabled.')
+      '"custom subnet" network.')
   parser.add_argument(
       '--disable-addons',
       type=arg_parsers.ArgList(
@@ -124,9 +123,7 @@ Alias,URI
 {aliases}
 |========
 """.format(
-    aliases='\n'.join(
-        ','.join(value) for value in
-        sorted(compute_constants.SCOPES.iteritems()))))
+    aliases=compute_constants.ScopesForHelp()))
   parser.add_argument(
       '--enable-cloud-endpoints',
       action='store_true',
@@ -165,13 +162,19 @@ Alias,URI
       '--max-nodes-per-pool nodes. Defaults to {nodes} nodes, but can be set '
       'as low as 100 nodes per pool on initial create.'.format(
           nodes=api_adapter.MAX_NODES_PER_POOL))
-  parser.add_argument(
-      '--tags',
-      help=argparse.SUPPRESS,
-      type=arg_parsers.ArgList(min_length=1),
-      metavar='TAGS')
   flags.AddImageTypeFlag(parser, 'cluster')
   flags.AddNodeLabelsFlag(parser)
+  flags.AddTagsFlag(parser, """\
+Applies the given Compute Engine tags (comma separated) on all nodes in the new
+node-pool. Example:
+
+  $ {command} example-cluster --tags=tag1,tag2
+
+New nodes, including ones created by resize or recreate, will have these tags
+on the Compute Engine API instance object and can be used in firewall rules.
+See https://cloud.google.com/sdk/gcloud/reference/compute/firewall-rules/create
+for examples.
+""")
 
 
 @base.ReleaseTracks(base.ReleaseTrack.GA)
@@ -181,10 +184,14 @@ class Create(base.CreateCommand):
   @staticmethod
   def Args(parser):
     _Args(parser)
-    flags.AddClusterAutoscalingFlags(parser, suppressed=True)
+    flags.AddClusterAutoscalingFlags(parser, hidden=True)
     flags.AddLocalSSDFlag(parser, suppressed=True)
     flags.AddEnableKubernetesAlphaFlag(parser, suppressed=True)
     flags.AddClusterVersionFlag(parser, 'master and nodes', True)
+    flags.AddPreemptibleFlag(parser, suppressed=True)
+    flags.AddEnableAutoRepairFlag(parser, suppressed=True)
+    flags.AddEnableAutoUpgradeFlag(parser, suppressed=True)
+    flags.AddServiceAccountFlag(parser, suppressed=True)
 
   def ParseCreateOptions(self, args):
     if not args.scopes:
@@ -214,7 +221,11 @@ class Create(base.CreateCommand):
         max_nodes=args.max_nodes,
         min_nodes=args.min_nodes,
         image_type=args.image_type,
-        max_nodes_per_pool=args.max_nodes_per_pool)
+        max_nodes_per_pool=args.max_nodes_per_pool,
+        preemptible=args.preemptible,
+        enable_autorepair=args.enable_autorepair,
+        enable_autoupgrade=args.enable_autoupgrade,
+        service_account=args.service_account)
 
   def Collection(self):
     return 'container.projects.zones.clusters'
@@ -248,6 +259,14 @@ class Create(base.CreateCommand):
       console_io.PromptContinue(message=constants.KUBERNETES_ALPHA_PROMPT,
                                 throw_if_unattended=True,
                                 cancel_on_no=True)
+
+    if options.enable_autorepair is not None:
+      log.status.Print(messages.AutoUpdateUpgradeRepairMessage(
+          options.enable_autorepair, 'autorepair'))
+
+    if options.enable_autoupgrade is not None:
+      log.status.Print(messages.AutoUpdateUpgradeRepairMessage(
+          options.enable_autoupgrade, 'autoupgrade'))
 
     operation = None
     try:
@@ -284,10 +303,14 @@ class CreateBeta(Create):
   @staticmethod
   def Args(parser):
     _Args(parser)
-    flags.AddClusterAutoscalingFlags(parser, suppressed=True)
+    flags.AddClusterAutoscalingFlags(parser, hidden=True)
     flags.AddLocalSSDFlag(parser)
     flags.AddEnableKubernetesAlphaFlag(parser)
     flags.AddClusterVersionFlag(parser, 'master and nodes')
+    flags.AddPreemptibleFlag(parser)
+    flags.AddEnableAutoRepairFlag(parser, suppressed=True)
+    flags.AddEnableAutoUpgradeFlag(parser)
+    flags.AddServiceAccountFlag(parser)
 
 
 @base.ReleaseTracks(base.ReleaseTrack.ALPHA)
@@ -301,3 +324,7 @@ class CreateAlpha(Create):
     flags.AddLocalSSDFlag(parser)
     flags.AddEnableKubernetesAlphaFlag(parser)
     flags.AddClusterVersionFlag(parser, 'master and nodes')
+    flags.AddPreemptibleFlag(parser)
+    flags.AddEnableAutoRepairFlag(parser, suppressed=True)
+    flags.AddEnableAutoUpgradeFlag(parser)
+    flags.AddServiceAccountFlag(parser)

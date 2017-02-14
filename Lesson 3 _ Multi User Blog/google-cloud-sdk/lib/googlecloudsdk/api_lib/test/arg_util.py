@@ -19,7 +19,6 @@ import types
 from googlecloudsdk.api_lib.test import arg_file
 from googlecloudsdk.api_lib.test import arg_validate
 from googlecloudsdk.calliope import arg_parsers
-from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.core import log
 
 
@@ -47,41 +46,12 @@ def AddCommonTestRunArgs(parser):
       help='The path to the application binary file. The path may be in the '
       'local filesystem or in Google Cloud Storage using gs:// notation.')
   parser.add_argument(
-      '--app-package',
-      help='The Java package of the application under test (default: extracted '
-      'from the APK manifest).')
-  parser.add_argument(
       '--async', action='store_true',
       help='Invoke a test asynchronously without waiting for test results.')
   parser.add_argument(
-      '--auto-google-login', action='store_true',
-      hidden=True,
-      help='Automatically log into the test device using a preconfigured '
-      'Google account before beginning the test.')
-  parser.add_argument(
-      '--obb-files',
-      type=arg_parsers.ArgList(min_length=1, max_length=2),
-      metavar='OBB_FILE',
-      help='A list of one or two Android OBB file names which will be copied '
-      'to each test device before the tests will run (default: None). Each '
-      'OBB file name must conform to the format as specified by Android (e.g. '
-      '[main|patch].0300110.com.example.android.obb) and will be installed '
-      'into <shared-storage>/Android/obb/<package-name>/ on the test device')
-
-
-def AddSharedCommandArgs(parser):
-  """Register misc args which can be shared by other gcloud test commands.
-
-  For example, 'gcloud webtest provision' and 'gcloud test run' can share these.
-
-  Args:
-    parser: An argparse parser used to add arguments that follow a command
-        in the CLI.
-  """
-  parser.add_argument(
       '--results-bucket',
       help='The name of a Google Cloud Storage bucket where test results will '
-      'be stored (default: "cloud-test-<PROJECT-ID>").')
+      'be stored (default: "test-lab-<random-UUID>").')
   parser.add_argument(
       '--results-history-name',
       help='The history name for your test results (an arbitrary string label; '
@@ -101,53 +71,51 @@ def AddSharedCommandArgs(parser):
       '- *--timeout 100* is 100 seconds')
 
 
-def AddMatrixArgs(parser):
-  """Register the repeatable args which define the the axes for a test matrix.
+def AddAndroidTestArgs(parser):
+  """Register args which are specific to Android test commands.
 
   Args:
-    parser: An argparse parser used to add arguments that follow a command
-        in the CLI.
+    parser: An argparse parser used to add arguments that follow a command in
+        the CLI.
   """
   parser.add_argument(
-      '--device-ids', '-d',
-      type=arg_parsers.ArgList(min_length=1),
-      metavar='DEVICE_ID',
-      help='The list of DEVICE_IDs to test against (default: one device '
-      'determined by Google Cloud Test Lab\'s device catalog; see TAGS listed '
-      'by the *$ {parent_command} devices list* command).')
+      '--app-package',
+      help='The Java package of the application under test (default: extracted '
+      'from the APK manifest).')
   parser.add_argument(
-      '--os-version-ids', '-v',
-      type=arg_parsers.ArgList(min_length=1),
-      metavar='OS_VERSION_ID',
-      help='The list of OS_VERSION_IDs to test against (default: a version ID '
-      'determined by Google Cloud Test Lab\'s device catalog).')
+      '--auto-google-login', action='store_true', default=True,
+      help='Automatically log into the test device using a preconfigured '
+      'Google account before beginning the test.')
   parser.add_argument(
-      '--locales', '-l',
-      type=arg_parsers.ArgList(min_length=1),
-      metavar='LOCALE',
-      help='The list of LOCALEs to test against (default: a single locale '
-      'determined by Google Cloud Test Lab\'s device catalog).')
-  orientation = parser.add_argument(
-      '--orientations', '-o',
-      metavar='ORIENTATION',
-      type=arg_parsers.ArgList(min_length=1, max_length=2,
-                               choices=arg_validate.ORIENTATION_LIST),
-      default='portrait',
-      help='The device orientation(s) to test against.')
-  orientation.completer = arg_parsers.GetMultiCompleter(OrientationsCompleter)
+      '--directories-to-pull',
+      type=arg_parsers.ArgList(),
+      metavar='DIR_TO_PULL',
+      help='A list of paths that will be copied from the device\'s storage to '
+      'the designated results bucket after the test is complete. (ex. '
+      '--directories-to-pull /sdcard/tempDir1,/data/tempDir2)')
+  parser.add_argument(
+      '--environment-variables',
+      type=arg_parsers.ArgDict(),
+      metavar='KEY=VALUE',
+      help='A comma-separated, key=value, map of environment variables and '
+      'their desired values. The environment variables passed here will '
+      'be mirrored on to the adb run command. For example, specify '
+      '--environment-variables '
+      'coverage=true,coverageFile="/sdcard/tempDir/coverage.ec" to enable code '
+      'coverage and provide a file path to store the coverage results.')
+  parser.add_argument(
+      '--obb-files',
+      type=arg_parsers.ArgList(
+          min_length=1, max_length=2),
+      metavar='OBB_FILE',
+      help='A list of one or two Android OBB file names which will be copied '
+      'to each test device before the tests will run (default: None). Each '
+      'OBB file name must conform to the format as specified by Android (e.g. '
+      '[main|patch].0300110.com.example.android.obb) and will be installed '
+      'into <shared-storage>/Android/obb/<package-name>/ on the test device.')
 
+  # The following args are specific to Android instrumentation tests.
 
-def OrientationsCompleter(prefix, unused_parsed_args, unused_kwargs):
-  return [p for p in arg_validate.ORIENTATION_LIST if p.startswith(prefix)]
-
-
-def AddInstrumentationTestArgs(parser):
-  """Register args which are specific to java Instrumentation tests.
-
-  Args:
-    parser: An argparse parser used to add arguments that follow a command
-        in the CLI.
-  """
   parser.add_argument(
       '--test',
       help='The path to the test binary file. The given path may be in the '
@@ -171,14 +139,8 @@ def AddInstrumentationTestArgs(parser):
       '* "class package_name.class_name"\n'
       '* "class package_name.class_name#method_name".')
 
+  # The following args are specific to Android Robo tests.
 
-def AddRoboTestArgs(parser):
-  """Register args which are specific to Android Robo tests.
-
-  Args:
-    parser: An argparse parser used to add arguments that follow a command
-        in the CLI.
-  """
   parser.add_argument(
       '--max-steps', metavar='int', type=arg_validate.NONNEGATIVE_INT_PARSER,
       help='The maximum number of steps/actions a robo test can execute '
@@ -204,142 +166,47 @@ def AddRoboTestArgs(parser):
       'that are not associated with real users.')
 
 
-def Prepare(args, catalog):
-  """Load, apply defaults, and perform validation on test arguments.
+def AddMatrixArgs(parser):
+  """Register the repeatable args which define the the axes for a test matrix.
 
   Args:
-    args: an argparse namespace. All the arguments that were provided to the
-      command invocation (i.e. group and command arguments combined).
-    catalog: the TestingEnvironmentCatalog used to find defaults for matrix
-      dimension args.
-
-  Raises:
-    InvalidArgumentException: If an argument name is unknown, an argument does
-      not contain a valid value, or an argument is not valid when used with the
-      given type of test.
-    RequiredArgumentException: If a required arg is missing.
+    parser: An argparse parser used to add arguments that follow a command
+        in the CLI.
   """
-  all_test_args_set = _GetSetOfAllTestArgs(_TEST_TYPE_ARG_RULES,
-                                           _SHARED_ARG_RULES)
-  args_from_file = arg_file.GetArgsFromArgFile(args.argspec, all_test_args_set)
-  _ApplyLowerPriorityArgs(args, args_from_file, True)
-
-  test_type = _GetTestTypeOrRaise(args, _TEST_TYPE_ARG_RULES)
-  _ApplyLowerPriorityArgs(args, _TEST_TYPE_ARG_RULES[test_type]['defaults'])
-  _ApplyLowerPriorityArgs(args, _SHARED_ARG_RULES['defaults'])
-  _ApplyLowerPriorityArgs(args, _GetDefaultsFromAndroidCatalog(catalog))
-  arg_validate.ValidateArgsForTestType(args,
-                                       test_type,
-                                       _TEST_TYPE_ARG_RULES,
-                                       _SHARED_ARG_RULES,
-                                       all_test_args_set)
-  arg_validate.ValidateOsVersions(args, catalog)
-  arg_validate.ValidateResultsBucket(args)
-  arg_validate.ValidateObbFileNames(args.obb_files)
-  arg_validate.ValidateRoboDirectivesList(args)
-
-
-# These nested dictionaries define which test args are required, optional, or
-# have specific default values based on the test type. These are critical for
-# validating args loaded from an argument file because they bypass the CLI flag
-# validations performed by the argparse package.
-_TEST_TYPE_ARG_RULES = {
-    'instrumentation': {
-        'required': ['test'],
-        'optional': ['test_package', 'test_runner_class', 'test_targets'],
-        'defaults': {}
-    },
-    'robo': {
-        'required': [],
-        'optional': ['app_initial_activity', 'max_depth', 'max_steps',
-                     'robo_directives'],
-        'defaults': {
-            'max_depth': 50,
-            'max_steps': -1,  # interpreted as 'no limit'
-        },
-    },
-}
+  parser.add_argument(
+      '--device-ids', '-d',
+      type=arg_parsers.ArgList(min_length=1),
+      metavar='DEVICE_ID',
+      help='The list of DEVICE_IDs to test against (default: one device '
+      'determined by the Firebase Test Lab device catalog; see TAGS listed '
+      'by the *$ {parent_command} devices list* command).')
+  parser.add_argument(
+      '--os-version-ids', '-v',
+      type=arg_parsers.ArgList(min_length=1),
+      metavar='OS_VERSION_ID',
+      help='The list of OS_VERSION_IDs to test against (default: a version ID '
+      'determined by the Firebase Test Lab device catalog).')
+  parser.add_argument(
+      '--locales', '-l',
+      type=arg_parsers.ArgList(min_length=1),
+      metavar='LOCALE',
+      help='The list of LOCALEs to test against (default: a single locale '
+      'determined by the Firebase Test Lab device catalog).')
+  orientation = parser.add_argument(
+      '--orientations', '-o',
+      metavar='ORIENTATION',
+      type=arg_parsers.ArgList(min_length=1, max_length=2,
+                               choices=arg_validate.ORIENTATION_LIST),
+      default='portrait',
+      help='The device orientation(s) to test against.')
+  orientation.completer = arg_parsers.GetMultiCompleter(OrientationsCompleter)
 
 
-# Define the test args which are shared among all test types.
-_SHARED_ARG_RULES = {
-    'required': ['type', 'app'],
-    'optional': ['device_ids', 'os_version_ids', 'locales', 'orientations',
-                 'app_package', 'async', 'auto_google_login', 'obb_files',
-                 'results_bucket', 'results_history_name', 'timeout'],
-    'defaults': {
-        'async': False,
-        'auto_google_login': False,
-        'timeout': 900,  # 15 minutes
-    }
-}
+def OrientationsCompleter(prefix, unused_parsed_args, unused_kwargs):
+  return [p for p in arg_validate.ORIENTATION_LIST if p.startswith(prefix)]
 
 
-def _GetTestTypeOrRaise(args, type_rules):
-  """If the test type is not user-specified, infer the most reasonable value.
-
-  Args:
-    args: an argparse namespace. All the arguments that were provided to the
-      command invocation (i.e. group and command arguments combined).
-    type_rules: a nested dictionary defining the required and optional args
-      per type of test, plus any default values.
-
-  Returns:
-    The type of the test to be run (e.g. 'robo' or 'instrumentation')
-
-  Raises:
-    InvalidArgumentException if an explicit test type is invalid.
-  """
-  if not args.type:
-    args.type = 'instrumentation' if args.test else 'robo'
-  if not type_rules.has_key(args.type):
-    raise exceptions.InvalidArgumentException(
-        'type', "'{0}' is not a valid test type.".format(args.type))
-  return args.type
-
-
-def _GetDefaultsFromAndroidCatalog(catalog):
-  """Builds a default dimensions dictionary using the environment catalog.
-
-  Args:
-    catalog: the Android environment catalog.
-
-  Returns:
-    A dictionary containing the default dimensions. If there is more than one
-    dimension value marked as default (a bug), the first one found is used.
-    Return value is formatted to be used with _ApplyLowerPriorityArgs.
-
-  Raises:
-    exceptions.UnknownArgumentException: if the default argument could not be
-      detected from the catalog response.
-  """
-  catalog_by_dimension = {
-      'device_ids': catalog.models,
-      'os_version_ids': catalog.versions,
-      'locales': catalog.runtimeConfiguration.locales,
-      'orientations': catalog.runtimeConfiguration.orientations
-  }
-  defaults = {
-      'device_ids': None,
-      'os_version_ids': None,
-      'locales': None,
-      'orientations': None
-  }
-
-  for dimension_name in catalog_by_dimension:
-    for dimension in catalog_by_dimension[dimension_name]:
-      if 'default' in dimension.tags:
-        defaults[dimension_name] = [dimension.id]
-        break
-    if defaults[dimension_name] is None:
-      raise exceptions.UnknownArgumentException(
-          dimension_name,
-          'Testing service failed to provide a default argument.')
-
-  return defaults
-
-
-def _GetSetOfAllTestArgs(type_rules, shared_rules):
+def GetSetOfAllTestArgs(type_rules, shared_rules):
   """Build a set of all possible 'gcloud test run' args.
 
   We need this set to test for invalid arg combinations because gcloud core
@@ -361,7 +228,7 @@ def _GetSetOfAllTestArgs(type_rules, shared_rules):
   return set(all_test_args_list)
 
 
-def _ApplyLowerPriorityArgs(args, lower_pri_args, issue_cli_warning=False):
+def ApplyLowerPriorityArgs(args, lower_pri_args, issue_cli_warning=False):
   """Apply lower-priority arg values from a dictionary to args without values.
 
   May be used to apply arg default values, or to merge args from another source,

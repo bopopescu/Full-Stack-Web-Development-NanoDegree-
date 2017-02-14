@@ -16,6 +16,7 @@
 
 from googlecloudsdk.api_lib.app import exceptions as api_lib_exceptions
 from googlecloudsdk.core import exceptions
+from googlecloudsdk.core import log
 from googlecloudsdk.core.console import console_io
 from googlecloudsdk.core.console import progress_tracker
 
@@ -28,7 +29,29 @@ class AppAlreadyExistsError(exceptions.Error):
   """The app which is getting created already exists."""
 
 
-def CreateApp(api_client, project, region):
+def CheckAppNotExists(api_client, project):
+  """Raises an error if the app already exists.
+
+  Args:
+    api_client: The App Engine Admin API client
+    project: The GCP project
+
+  Raises:
+    AppAlreadyExistsError if app already exists
+  """
+  try:
+    app = api_client.GetApplication()  # Should raise NotFoundError
+  except api_lib_exceptions.NotFoundError:
+    pass
+  else:
+    region = ' in region [{}]'.format(app.locationId) if app.locationId else ''
+    raise AppAlreadyExistsError(
+        'The project [{project}] already contains an App Engine '
+        'application{region}.  You can deploy your application using '
+        '`gcloud app deploy`.'.format(project=project, region=region))
+
+
+def CreateApp(api_client, project, region, suppress_warning=False):
   """Create an App Engine app in the given region.
 
   Prints info about the app being created and displays a progress tracker.
@@ -37,10 +60,16 @@ def CreateApp(api_client, project, region):
     api_client: The App Engine Admin API client
     project: The GCP project
     region: The region to create the app
+    suppress_warning: True if user doesn't need to be warned this is
+        irreversible.
 
   Raises:
     AppAlreadyExistsError if app already exists
   """
+  if not suppress_warning:
+    log.status.Print('You are creating an app for project [{project}].'.format(
+        project=project))
+    log.warn('Creating an app for a project is irreversible.\n')
   message = ('Creating App Engine application in project [{project}] and '
              'region [{region}].'.format(project=project, region=region))
   with progress_tracker.ProgressTracker(message):
@@ -65,6 +94,7 @@ def CreateAppInteractively(api_client, project):
         [1] us-east1      (supports standard and flexible)
         [2] europe-west   (supports standard)
         [3] us-central    (supports standard and flexible)
+        [4] cancel
       Please enter your numeric choice:  1
 
   Args:
@@ -74,10 +104,17 @@ def CreateAppInteractively(api_client, project):
   Raises:
     AppAlreadyExistsError if app already exists
   """
+  log.status.Print('You are creating an app for project [{}].'.format(project))
+  log.warn('Creating an app for a project is irreversible.\n')
+
   all_regions = sorted(set(api_client.ListRegions()))
-  idx = console_io.PromptChoice(all_regions, message=(
-      'Please choose a region for your application. After choosing a region, '
-      'it cannot be changed. Which region would you like to choose?\n\n'))
+  idx = console_io.PromptChoice(all_regions,
+                                message=('Please choose a region for your '
+                                         'application. After choosing a '
+                                         'region, you cannot change it. Which '
+                                         'region would you like to choose?'
+                                         '\n\n'),
+                                cancel_option=True)
   region = all_regions[idx]
-  CreateApp(api_client, project, region.region)
+  CreateApp(api_client, project, region.region, suppress_warning=True)
 

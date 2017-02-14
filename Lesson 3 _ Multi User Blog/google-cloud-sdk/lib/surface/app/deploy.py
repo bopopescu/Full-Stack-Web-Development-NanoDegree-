@@ -15,8 +15,10 @@
 
 """The gcloud app deploy command."""
 
+from googlecloudsdk.api_lib.app import deploy_app_command_util
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.app import deploy_util
+from googlecloudsdk.core import properties
 
 
 _DETAILED_HELP = {
@@ -27,6 +29,10 @@ _DETAILED_HELP = {
         Engine server.  As an input it takes one or more ``DEPLOYABLES'' that
         should be uploaded.  A ``DEPLOYABLE'' can be a service's .yaml file or a
         configuration's .yaml file.
+
+        This command supports App Engine flexible task queue files. The format
+        of task queue files can be found at:
+        https://cloud.google.com/appengine/docs/python/config/queueref
         """,
     'EXAMPLES': """\
         To deploy a single service, run:
@@ -50,7 +56,7 @@ class DeployGA(base.SilentCommand):
     deploy_util.ArgsDeploy(parser)
 
   def Run(self, args):
-    return deploy_util.RunDeploy(self, args)
+    return deploy_util.RunDeploy(args)
 
 
 @base.ReleaseTracks(base.ReleaseTrack.BETA)
@@ -63,22 +69,13 @@ class DeployBeta(base.SilentCommand):
     deploy_util.ArgsDeploy(parser)
 
   def Run(self, args):
-    return deploy_util.RunDeploy(self, args, enable_endpoints=True,
-                                 app_create=True)
-
-
-@base.ReleaseTracks(base.ReleaseTrack.PREVIEW)
-class DeployPreview(base.SilentCommand):
-  """Deploy the local code and/or configuration of your app to App Engine."""
-
-  @staticmethod
-  def Args(parser):
-    """Get arguments for this command."""
-    deploy_util.ArgsDeploy(parser)
-
-  def Run(self, args):
-    return deploy_util.RunDeploy(self, args, enable_endpoints=True)
+    upload_strategy = deploy_app_command_util.UploadStrategy.THREADS
+    # The runtime builders are property-configurable AND beta-only
+    use_runtime_builders = properties.VALUES.app.use_runtime_builders.GetBool()
+    return deploy_util.RunDeploy(args, enable_endpoints=True,
+                                 use_beta_stager=True,
+                                 upload_strategy=upload_strategy,
+                                 use_runtime_builders=use_runtime_builders)
 
 DeployGA.detailed_help = _DETAILED_HELP
 DeployBeta.detailed_help = _DETAILED_HELP
-DeployPreview.detailed_help = _DETAILED_HELP

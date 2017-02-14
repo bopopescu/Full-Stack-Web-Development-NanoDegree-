@@ -25,25 +25,21 @@ def AddDescription(parser):
       help='An optional, textual description for the backend.')
 
 
-def AddInstanceGroup(parser, operation_type,
-                     multizonal=False, with_deprecated_zone=False):
+def AddInstanceGroup(parser, operation_type, with_deprecated_zone=False):
   """Add arguments to define instance group."""
   parser.add_argument(
       '--instance-group',
       required=True,
       help='The name or URI of a Google Cloud Instance Group.')
 
-  scope_parser = parser
-  if multizonal:
-    scope_parser = parser.add_mutually_exclusive_group()
-    flags.AddRegionFlag(
-        scope_parser,
-        resource_type='instance group',
-        operation_type='{0} the backend service'.format(operation_type),
-        flag_prefix='instance-group',
-        explanation=flags.REGION_PROPERTY_EXPLANATION_NO_DEFAULT)
+  scope_parser = parser.add_mutually_exclusive_group()
+  flags.AddRegionFlag(
+      scope_parser,
+      resource_type='instance group',
+      operation_type='{0} the backend service'.format(operation_type),
+      flag_prefix='instance-group',
+      explanation=flags.REGION_PROPERTY_EXPLANATION_NO_DEFAULT)
   if with_deprecated_zone:
-    scope_parser = scope_parser.add_mutually_exclusive_group()
     flags.AddZoneFlag(
         scope_parser,
         resource_type='instance group',
@@ -54,8 +50,7 @@ def AddInstanceGroup(parser, operation_type,
       resource_type='instance group',
       operation_type='{0} the backend service'.format(operation_type),
       flag_prefix='instance-group',
-      explanation=(flags.ZONE_PROPERTY_EXPLANATION_NO_DEFAULT
-                   if multizonal else flags.ZONE_PROPERTY_EXPLANATION))
+      explanation=flags.ZONE_PROPERTY_EXPLANATION_NO_DEFAULT)
 
 
 def WarnOnDeprecatedFlags(args):

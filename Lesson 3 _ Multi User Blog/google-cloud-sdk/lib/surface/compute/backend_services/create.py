@@ -52,24 +52,39 @@ def _ResolveProtocol(messages, args, default='HTTP'):
       args.protocol or default)
 
 
+def AddIapFlag(parser):
+  iap_flag = flags.AddIap(parser)
+  # TODO(b/34479878): It would be nice if the auto-generated help text were
+  # a bit better so we didn't need to be quite so verbose here.
+  iap_flag.detailed_help = """\
+    Configure Identity Aware Proxy (IAP) service. You can configure IAP to be
+    'enabled' or 'disabled' (default). If it is enabled you can provide values
+    for 'oauth2-client-id' and 'oauth2-client-secret'. For example,
+    '--iap=enabled,oauth2-client-id=foo,oauth2-client-secret=bar' will
+    turn IAP on, and '--iap=disabled' will turn it off. See
+    https://cloud.google.com/iap/ for more information about this feature.
+    """
+
+
 @base.ReleaseTracks(base.ReleaseTrack.GA)
 class CreateGA(backend_services_utils.BackendServiceMutator):
   """Create a backend service."""
 
   @staticmethod
   def Args(parser):
-    flags.GLOBAL_BACKEND_SERVICE_ARG.AddArgument(parser)
+    flags.GLOBAL_REGIONAL_BACKEND_SERVICE_ARG.AddArgument(parser)
     flags.AddDescription(parser)
     flags.AddHealthChecks(parser)
     flags.AddHttpHealthChecks(parser)
     flags.AddHttpsHealthChecks(parser)
     flags.AddTimeout(parser)
     flags.AddPortName(parser)
-    flags.AddProtocol(parser)
+    flags.AddProtocol(parser, default=None)
     flags.AddEnableCdn(parser, default=False)
     flags.AddSessionAffinity(parser, internal_lb=False)
     flags.AddAffinityCookieTtl(parser)
     flags.AddConnectionDrainingTimeout(parser)
+    flags.AddLoadBalancingScheme(parser)
 
   @property
   def method(self):
@@ -96,6 +111,9 @@ class CreateGA(backend_services_utils.BackendServiceMutator):
         enableCDN=enable_cdn)
 
   def CreateGlobalRequests(self, args):
+    if args.load_balancing_scheme == 'INTERNAL':
+      raise exceptions.ToolException(
+          'Must specify --region for internal load balancer.')
     backend_service = self._CreateBackendService(args)
 
     if args.connection_draining_timeout is not None:
@@ -114,6 +132,46 @@ class CreateGA(backend_services_utils.BackendServiceMutator):
         project=self.project)
 
     return [request]
+
+  def CreateRegionalRequests(self, args):
+    backend_services_ref = self.CreateRegionalReference(
+        args.name, args.region, resource_type='regionBackendServices')
+    backend_service = self._CreateRegionBackendService(args)
+    if args.connection_draining_timeout is not None:
+      backend_service.connectionDraining = self.messages.ConnectionDraining(
+          drainingTimeoutSec=args.connection_draining_timeout)
+
+    request = self.messages.ComputeRegionBackendServicesInsertRequest(
+        backendService=backend_service,
+        region=backend_services_ref.region,
+        project=backend_services_ref.project)
+
+    return [request]
+
+  def _CreateRegionBackendService(self, args):
+    health_checks = backend_services_utils.GetHealthChecks(args, self)
+    if not health_checks:
+      raise exceptions.ToolException('At least one health check required.')
+
+    return self.messages.BackendService(
+        description=args.description,
+        name=args.name,
+        healthChecks=health_checks,
+        loadBalancingScheme=(
+            self.messages.BackendService.LoadBalancingSchemeValueValuesEnum(
+                args.load_balancing_scheme)),
+        protocol=_ResolveProtocol(self.messages, args, default='TCP'),
+        timeoutSec=args.timeout)
+
+  def _ApplyIapArgs(self, iap_arg, backend_service):
+    if iap_arg is not None:
+      backend_service.iap = backend_services_utils.GetIAP(iap_arg,
+                                                          self.messages)
+      if backend_service.iap.enabled:
+        log.warning(backend_services_utils.IapBestPracticesNotice())
+      if (backend_service.iap.enabled and backend_service.protocol is not
+          self.messages.BackendService.ProtocolValueValuesEnum.HTTPS):
+        log.warning(backend_services_utils.IapHttpWarning())
 
 
 @base.ReleaseTracks(base.ReleaseTrack.ALPHA)
@@ -131,13 +189,15 @@ class CreateAlpha(CreateGA):
     flags.AddPortName(parser)
     flags.AddProtocol(parser, default=None)
     flags.AddEnableCdn(parser, default=False)
+    flags.AddCacheKeyIncludeProtocol(parser, default=True)
+    flags.AddCacheKeyIncludeHost(parser, default=True)
+    flags.AddCacheKeyIncludeQueryString(parser, default=True)
+    flags.AddCacheKeyQueryStringList(parser)
     flags.AddSessionAffinity(parser, internal_lb=True)
     flags.AddAffinityCookieTtl(parser)
     flags.AddConnectionDrainingTimeout(parser)
-
-    # These are in beta
     flags.AddLoadBalancingScheme(parser)
-    flags.AddIap(parser)
+    AddIapFlag(parser)
 
   def CreateGlobalRequests(self, args):
     if args.load_balancing_scheme == 'INTERNAL':
@@ -151,6 +211,17 @@ class CreateAlpha(CreateGA):
     if args.enable_cdn:
       backend_service.enableCDN = args.enable_cdn
 
+    cache_key_policy = self.messages.CacheKeyPolicy()
+    backend_services_utils.ValidateCacheKeyPolicyArgs(args)
+    backend_services_utils.UpdateCacheKeyPolicy(args, cache_key_policy)
+    if (not args.cache_key_include_host or
+        not args.cache_key_include_protocol or
+        not args.cache_key_include_query_string or
+        args.cache_key_query_string_blacklist is not None or
+        args.cache_key_query_string_whitelist is not None):
+      backend_service.cdnPolicy = self.messages.BackendServiceCdnPolicy(
+          cacheKeyPolicy=cache_key_policy)
+
     if args.session_affinity is not None:
       backend_service.sessionAffinity = (
           self.messages.BackendService.SessionAffinityValueValuesEnum(
@@ -158,13 +229,7 @@ class CreateAlpha(CreateGA):
     if args.affinity_cookie_ttl is not None:
       backend_service.affinityCookieTtlSec = args.affinity_cookie_ttl
 
-    if args.iap:
-      backend_service.iap = backend_services_utils.GetIAP(args, self.messages)
-      if (backend_service.iap.enabled and backend_service.protocol is not
-          self.messages.BackendService.ProtocolValueValuesEnum.HTTPS):
-        log.warning('IAP has been enabled for a backend service that does '
-                    'not use HTTPS. Data sent from the Load Balancer to your '
-                    'VM will not be encrypted.')
+    self._ApplyIapArgs(args.iap, backend_service)
 
     request = self.messages.ComputeBackendServicesInsertRequest(
         backendService=backend_service,
@@ -173,6 +238,13 @@ class CreateAlpha(CreateGA):
     return [request]
 
   def CreateRegionalRequests(self, args):
+    if (not args.cache_key_include_host or
+        not args.cache_key_include_protocol or
+        not args.cache_key_include_query_string or
+        args.cache_key_query_string_blacklist is not None or
+        args.cache_key_query_string_whitelist is not None):
+      raise exceptions.ToolException(
+          'Custom cache key flags cannot be used for regional requests.')
     backend_services_ref = self.CreateRegionalReference(
         args.name, args.region, resource_type='regionBackendServices')
     backend_service = self._CreateRegionBackendService(args)
@@ -221,9 +293,8 @@ class CreateBeta(CreateGA):
     flags.AddSessionAffinity(parser, internal_lb=True)
     flags.AddAffinityCookieTtl(parser)
     flags.AddConnectionDrainingTimeout(parser)
-
-    # These are added for beta
     flags.AddLoadBalancingScheme(parser)
+    AddIapFlag(parser)
 
   def CreateGlobalRequests(self, args):
     if args.load_balancing_scheme == 'INTERNAL':
@@ -240,6 +311,8 @@ class CreateBeta(CreateGA):
               args.session_affinity))
     if args.session_affinity is not None:
       backend_service.affinityCookieTtlSec = args.affinity_cookie_ttl
+
+    self._ApplyIapArgs(args.iap, backend_service)
 
     request = self.messages.ComputeBackendServicesInsertRequest(
         backendService=backend_service,

@@ -15,7 +15,7 @@
 import httplib
 from googlecloudsdk.api_lib.compute import batch_helper
 from googlecloudsdk.api_lib.compute import path_simplifier
-from googlecloudsdk.api_lib.compute import time_utils
+from googlecloudsdk.command_lib.util import time_util
 from googlecloudsdk.core import log
 
 # 30 minute timeout... wild guess on avoiding timeouts on large disk clones.
@@ -92,7 +92,7 @@ def _RecordUnfinishedOperations(operations, errors):
 
 def WaitForOperations(operations, project, operation_service, resource_service,
                       http, batch_url, warnings, errors,
-                      custom_get_requests=None, timeout=None):
+                      timeout=None):
   """Blocks until the given operations are done or until a timeout is reached.
 
   Args:
@@ -107,10 +107,6 @@ def WaitForOperations(operations, project, operation_service, resource_service,
     batch_url: The URL to which batch requests should be sent.
     warnings: An output parameter for capturing warnings.
     errors: An output parameter for capturing errors.
-    custom_get_requests: A mapping of resource names to requests. If
-      this is provided, when an operation is DONE, instead of performing
-      a get on the targetLink, this function will consult custom_get_requests
-      and perform the request dictated by custom_get_requests.
     timeout: The maximum amount of time, in seconds, to wait for the
       operations to reach the DONE state.
 
@@ -124,7 +120,7 @@ def WaitForOperations(operations, project, operation_service, resource_service,
   operation_type = operation_service.GetResponseType('Get')
 
   responses = []
-  start = time_utils.CurrentTimeSec()
+  start = time_util.CurrentTimeSec()
   sleep_sec = 0
 
   while operations:
@@ -156,14 +152,9 @@ def WaitForOperations(operations, project, operation_service, resource_service,
 
         target_link = operation.targetLink
 
-        if custom_get_requests:
-          target_link, service, request_protobuf = (
-              custom_get_requests[operation.targetLink])
-          resource_requests.append((service, 'Get', request_protobuf))
-
         # We shouldn't get the target resource if the operation type
         # is delete because there will be no resource left.
-        elif not _IsDeleteOp(operation.operationType):
+        if not _IsDeleteOp(operation.operationType):
           request = resource_service.GetRequestType('Get')(project=project)
           if operation.zone:
             request.zone = path_simplifier.Name(operation.zone)
@@ -215,12 +206,14 @@ def WaitForOperations(operations, project, operation_service, resource_service,
 
     # Did we time out? If so, record the operations that timed out so
     # they can be reported to the user.
-    if time_utils.CurrentTimeSec() - start > timeout:
+    if time_util.CurrentTimeSec() - start > timeout:
       log.debug('Timeout of %ss reached.', timeout)
       _RecordUnfinishedOperations(operations, errors)
       break
 
     # Sleeps before trying to poll the operations again.
     sleep_sec += 1
-    log.debug('Sleeping for %ss.', sleep_sec)
-    time_utils.Sleep(min(sleep_sec, _MAX_TIME_BETWEEN_POLLS_SEC))
+    # Don't re-use sleep_sec, since we want to keep the same time increment
+    sleep_time = min(sleep_sec, _MAX_TIME_BETWEEN_POLLS_SEC)
+    log.debug('Sleeping for %ss.', sleep_time)
+    time_util.Sleep(sleep_time)

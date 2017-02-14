@@ -18,11 +18,12 @@ from googlecloudsdk.api_lib.compute import constants
 from googlecloudsdk.api_lib.compute import request_helper
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.compute import flags as compute_flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
 from googlecloudsdk.command_lib.compute.instances import exceptions
 from googlecloudsdk.command_lib.compute.instances import flags
 
 
-@base.ReleaseTracks(base.ReleaseTrack.ALPHA)
+@base.ReleaseTracks(base.ReleaseTrack.ALPHA, base.ReleaseTrack.BETA)
 class SetScopes(base_classes.NoOutputAsyncMutator):
   """Set scopes and service account for a Google Compute Engine instance."""
 
@@ -33,7 +34,7 @@ class SetScopes(base_classes.NoOutputAsyncMutator):
   @staticmethod
   def Args(parser):
     flags.INSTANCE_ARG.AddArgument(parser)
-    flags.AddServiceAccountAndScopeArgs(parser)
+    flags.AddServiceAccountAndScopeArgs(parser, True)
 
   @property
   def method(self):
@@ -53,13 +54,15 @@ class SetScopes(base_classes.NoOutputAsyncMutator):
       return self._instance
 
     errors = []
-    request = (self.service, 'Get', instance_ref.Request())
+    request = (self.service, 'Get', self.messages.ComputeInstancesGetRequest(
+        project=instance_ref.project,
+        zone=instance_ref.zone,
+        instance=instance_ref.instance))
     instance = list(request_helper.MakeRequests(
         requests=[request],
         http=self.http,
         batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None))
+        errors=errors))
     if errors or not instance:
       raise exceptions.ResourceMissingException(
           'Instance {0} does not exist.'.format(instance_ref.SelfLink()))
@@ -104,16 +107,28 @@ class SetScopes(base_classes.NoOutputAsyncMutator):
     return self._original_scopes(instance_ref)
 
   def _scopes(self, args, instance_ref):
-    return [constants.SCOPES.get(scope, scope)
-            for scope in self._unprocessed_scopes(args, instance_ref)]
+    """Get list of scopes to be assigned to the instance.
+
+    Args:
+      args: parsed command  line arguments.
+      instance_ref: reference to the instance to which scopes will be assigned.
+
+    Returns:
+      List of scope urls extracted from args, with scope aliases expanded.
+    """
+    result = []
+    for unprocessed_scope in self._unprocessed_scopes(args, instance_ref):
+      scope = constants.SCOPES.get(unprocessed_scope, [unprocessed_scope])
+      result.extend(scope)
+    return result
 
   def CreateRequests(self, args):
     flags.ValidateServiceAccountAndScopeArgs(args)
     instance_ref = flags.INSTANCE_ARG.ResolveAsResource(
         args, self.resources,
-        default_scope=compute_flags.ScopeEnum.ZONE,
+        default_scope=compute_scope.ScopeEnum.ZONE,
         scope_lister=compute_flags.GetDefaultScopeLister(
-            self.compute, self.project))
+            self.compute_client, self.project))
 
     email = self._email(args, instance_ref)
     scopes = self._scopes(args, instance_ref)

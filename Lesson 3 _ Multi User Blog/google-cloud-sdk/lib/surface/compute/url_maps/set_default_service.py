@@ -11,7 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """Command for changing the default service of a URL map."""
+
+import copy
+
 from googlecloudsdk.api_lib.compute import base_classes
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.compute.backend_buckets import (
@@ -19,10 +23,9 @@ from googlecloudsdk.command_lib.compute.backend_buckets import (
 from googlecloudsdk.command_lib.compute.backend_services import (
     flags as backend_service_flags)
 from googlecloudsdk.command_lib.compute.url_maps import flags
-from googlecloudsdk.third_party.py27 import py27_copy as copy
 
 
-@base.ReleaseTracks(base.ReleaseTrack.GA, base.ReleaseTrack.BETA)
+@base.ReleaseTracks(base.ReleaseTrack.GA)
 class SetDefaultServiceGA(base_classes.ReadWriteCommand):
   """Change the default service of a URL map."""
 
@@ -74,8 +77,8 @@ class SetDefaultServiceGA(base_classes.ReadWriteCommand):
     return replacement
 
 
-@base.ReleaseTracks(base.ReleaseTrack.ALPHA)
-class SetDefaultServiceAlpha(SetDefaultServiceGA):
+@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.ALPHA)
+class SetDefaultServiceBeta(SetDefaultServiceGA):
   """Change the default service of a URL map."""
 
   BACKEND_BUCKET_ARG = None
@@ -123,7 +126,7 @@ SetDefaultServiceGA.detailed_help = {
         there is no mapping in the URL map.
         """,
 }
-SetDefaultServiceAlpha.detailed_help = {
+SetDefaultServiceBeta.detailed_help = {
     'brief': 'Change the default service or default bucket of a URL map',
     'DESCRIPTION': """\
         *{command}* is used to change the default service or default

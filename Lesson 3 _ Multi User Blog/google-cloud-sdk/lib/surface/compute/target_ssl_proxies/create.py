@@ -14,82 +14,77 @@
 """Command for creating target SSL proxies."""
 
 from googlecloudsdk.api_lib.compute import base_classes
-from googlecloudsdk.api_lib.compute import health_checks_utils
+from googlecloudsdk.api_lib.compute import target_proxies_utils
+from googlecloudsdk.api_lib.compute import utils
+from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.compute.backend_services import (
+    flags as backend_service_flags)
+from googlecloudsdk.command_lib.compute.ssl_certificates import (
+    flags as ssl_certificate_flags)
+from googlecloudsdk.command_lib.compute.target_ssl_proxies import flags
 
 
-class Create(base_classes.BaseAsyncCreator):
+class Create(base.CreateCommand):
   """Create a target SSL proxy."""
 
-  @staticmethod
-  def Args(parser):
-    health_checks_utils.AddProxyHeaderRelatedCreateArgs(parser)
+  BACKEND_SERVICE_ARG = None
+  SSL_CERTIFICATE_ARG = None
+  TARGET_SSL_PROXY_ARG = None
+
+  @classmethod
+  def Args(cls, parser):
+    target_proxies_utils.AddProxyHeaderRelatedCreateArgs(parser)
+
+    cls.BACKEND_SERVICE_ARG = (
+        backend_service_flags.BackendServiceArgumentForTargetSslProxy())
+    cls.BACKEND_SERVICE_ARG.AddArgument(parser)
+    cls.SSL_CERTIFICATE_ARG = (
+        ssl_certificate_flags.SslCertificateArgumentForOtherResource(
+            'target SSL proxy'))
+    cls.SSL_CERTIFICATE_ARG.AddArgument(parser)
+    cls.TARGET_SSL_PROXY_ARG = flags.TargetSslProxyArgument()
+    cls.TARGET_SSL_PROXY_ARG.AddArgument(parser)
 
     parser.add_argument(
         '--description',
         help='An optional, textual description for the target SSL proxy.')
 
-    ssl_certificate = parser.add_argument(
-        '--ssl-certificate',
-        required=True,
-        help=('A reference to an SSL certificate resource that is used for '
-              'server-side authentication.'))
-    ssl_certificate.detailed_help = """\
-        A reference to an SSL certificate resource that is used for
-        server-side authentication. The SSL certificate must exist and cannot
-        be deleted while referenced by a target SSL proxy.
-        """
+  def Run(self, args):
+    holder = base_classes.ComputeApiHolder(self.ReleaseTrack())
+    ssl_certificate_ref = self.SSL_CERTIFICATE_ARG.ResolveAsResource(
+        args, holder.resources)
 
-    backend_service = parser.add_argument(
-        '--backend-service',
-        required=True,
-        help=('.'))
-    backend_service.detailed_help = """\
-        A backend service that will be used for connections to the target SSL
-        proxy.
-        """
+    backend_service_ref = self.BACKEND_SERVICE_ARG.ResolveAsResource(
+        args, holder.resources)
 
-    parser.add_argument(
-        'name',
-        help='The name of the target SSL proxy.')
+    target_ssl_proxy_ref = self.TARGET_SSL_PROXY_ARG.ResolveAsResource(
+        args, holder.resources)
 
-  @property
-  def service(self):
-    return self.compute.targetSslProxies
-
-  @property
-  def method(self):
-    return 'Insert'
-
-  @property
-  def resource_type(self):
-    return 'targetSslProxies'
-
-  def CreateRequests(self, args):
-    ssl_certificate_ref = self.CreateGlobalReference(
-        args.ssl_certificate, resource_type='sslCertificates')
-
-    backend_service_ref = self.CreateGlobalReference(
-        args.backend_service, resource_type='backendServices')
-
-    target_ssl_proxy_ref = self.CreateGlobalReference(
-        args.name, resource_type='targetSslProxies')
-
+    client = holder.client.apitools_client
+    messages = holder.client.messages
     if args.proxy_header:
-      proxy_header = self.messages.TargetSslProxy.ProxyHeaderValueValuesEnum(
+      proxy_header = messages.TargetSslProxy.ProxyHeaderValueValuesEnum(
           args.proxy_header)
     else:
       proxy_header = (
-          self.messages.TargetSslProxy.ProxyHeaderValueValuesEnum.NONE)
+          messages.TargetSslProxy.ProxyHeaderValueValuesEnum.NONE)
 
-    request = self.messages.ComputeTargetSslProxiesInsertRequest(
-        project=self.project,
-        targetSslProxy=self.messages.TargetSslProxy(
+    request = messages.ComputeTargetSslProxiesInsertRequest(
+        project=target_ssl_proxy_ref.project,
+        targetSslProxy=messages.TargetSslProxy(
             description=args.description,
             name=target_ssl_proxy_ref.Name(),
             proxyHeader=proxy_header,
             service=backend_service_ref.SelfLink(),
             sslCertificates=[ssl_certificate_ref.SelfLink()]))
-    return [request]
+
+    errors = []
+    resources = holder.client.MakeRequests(
+        [(client.targetSslProxies, 'Insert', request)], errors)
+
+    if errors:
+      utils.RaiseToolException(errors)
+    return resources
 
 
 Create.detailed_help = {

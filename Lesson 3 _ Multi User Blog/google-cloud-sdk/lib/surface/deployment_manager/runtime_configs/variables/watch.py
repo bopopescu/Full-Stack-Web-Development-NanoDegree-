@@ -18,12 +18,13 @@ import socket
 
 from apitools.base.py import exceptions as apitools_exceptions
 
+from googlecloudsdk.api_lib.deployment_manager import exceptions
 from googlecloudsdk.api_lib.deployment_manager.runtime_configs import util
 from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
-from googlecloudsdk.calliope import exceptions as base_exceptions
 from googlecloudsdk.command_lib.deployment_manager.runtime_configs import flags
 from googlecloudsdk.core.console import progress_tracker
+from googlecloudsdk.core.util import times
 
 
 TIMEOUT_MESSAGE = 'The read operation timed out'
@@ -114,25 +115,19 @@ class Watch(base.Command):
     messages = util.Messages()
 
     var_resource = util.ParseVariableName(args.name, args)
-    project = var_resource.projectsId
-    config = var_resource.configsId
-    name = var_resource.Name()
 
     if args.newer_than:
-      # TODO(user): better way to handle UTC suffix?
-      newer_than = args.newer_than.isoformat() + 'Z'
+      newer_than = times.FormatDateTime(args.newer_than)
     else:
       newer_than = None
 
     with progress_tracker.ProgressTracker(
-        'Waiting for variable [{0}] to change'.format(name)):
+        'Waiting for variable [{0}] to change'.format(var_resource.Name())):
       try:
         return util.FormatVariable(
             variable_client.Watch(
                 messages.RuntimeconfigProjectsConfigsVariablesWatchRequest(
-                    projectsId=project,
-                    configsId=config,
-                    variablesId=name,
+                    name=var_resource.RelativeName(),
                     watchVariableRequest=messages.WatchVariableRequest(
                         newerThan=newer_than,
                     )
@@ -157,5 +152,5 @@ class Watch(base.Command):
 
 
 def _RaiseTimeout():
-  raise base_exceptions.ToolException(
+  raise exceptions.OperationTimeoutError(
       'Variable did not change prior to timeout.', exit_code=2)

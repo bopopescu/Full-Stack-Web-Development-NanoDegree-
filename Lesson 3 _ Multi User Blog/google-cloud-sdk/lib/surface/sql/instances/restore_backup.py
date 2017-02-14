@@ -18,6 +18,7 @@ from googlecloudsdk.api_lib.sql import operations
 from googlecloudsdk.api_lib.sql import validate
 from googlecloudsdk.calliope import base
 from googlecloudsdk.core import log
+from googlecloudsdk.core.console import console_io
 
 
 @base.ReleaseTracks(base.ReleaseTrack.GA)
@@ -68,7 +69,16 @@ class RestoreBackup(base.Command):
     validate.ValidateInstanceName(args.instance)
     instance_ref = resources.Parse(args.instance, collection='sql.instances')
 
-    instance_resource = sql_client.instances.Get(instance_ref.Request())
+    if not console_io.PromptContinue(
+        'All current data on the instance will be lost when the backup is '
+        'restored'
+    ):
+      return None
+
+    instance_resource = sql_client.instances.Get(
+        sql_messages.SqlInstancesGetRequest(
+            project=instance_ref.project,
+            instance=instance_ref.instance))
     # At this point we support only one backup-config. So, just use that id.
     backup_config = instance_resource.settings.backupConfiguration[0].id
 
@@ -87,7 +97,11 @@ class RestoreBackup(base.Command):
     )
 
     if args.async:
-      return sql_client.operations.Get(operation_ref.Request())
+      return sql_client.operations.Get(
+          sql_messages.SqlOperationsGetRequest(
+              project=operation_ref.project,
+              instance=operation_ref.instance,
+              operation=operation_ref.operation))
 
     operations.OperationsV1Beta3.WaitForOperation(
         sql_client, operation_ref, 'Restoring Cloud SQL instance')
@@ -157,6 +171,12 @@ class RestoreBackupBeta(base.Command):
     validate.ValidateInstanceName(args.instance)
     instance_ref = resources.Parse(args.instance, collection='sql.instances')
 
+    if not console_io.PromptContinue(
+        'All current data on the instance will be lost when the backup is '
+        'restored'
+    ):
+      return None
+
     if not args.backup_instance:
       args.backup_instance = args.instance
 
@@ -183,7 +203,11 @@ class RestoreBackupBeta(base.Command):
     )
 
     if args.async:
-      return sql_client.operations.Get(operation_ref.Request())
+      return sql_client.operations.Get(
+          sql_messages.SqlOperationsGetRequest(
+              project=operation_ref.project,
+              instance=operation_ref.instance,
+              operation=operation_ref.operation))
 
     operations.OperationsV1Beta4.WaitForOperation(
         sql_client, operation_ref, 'Restoring Cloud SQL instance')

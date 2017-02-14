@@ -27,7 +27,6 @@ Did you mean to run distributed training?\
 
 
 # TODO(b/31687602) Add link to documentation of env vars once created
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
 class RunLocal(base.Command):
   r"""Run a Cloud ML training job locally.
 
@@ -61,7 +60,7 @@ class RunLocal(base.Command):
     flags.PARAM_SERVERS.AddToParser(parser)
     flags.WORKERS.AddToParser(parser)
     flags.START_PORT.AddToParser(parser)
-    flags.USER_ARGS.AddToParser(parser)
+    flags.GetUserArgs(local=True).AddToParser(parser)
 
   def Run(self, args):
     """This is what gets called when the user runs this command.
@@ -77,7 +76,7 @@ class RunLocal(base.Command):
     # Mimic behavior of ml jobs submit training
     package_root = os.path.dirname(os.path.abspath(package_path))
     if args.distributed:
-      local_train.RunDistributed(
+      retval = local_train.RunDistributed(
           args.module_name,
           package_root,
           args.parameter_server_count or 2,
@@ -90,6 +89,10 @@ class RunLocal(base.Command):
             flag='--parameter-server-count'))
       if args.worker_count:
         log.warn(_BAD_FLAGS_WARNING_MESSAGE.format(flag='--worker-count'))
-      local_train.MakeProcess(args.module_name,
-                              package_root,
-                              args=args.user_args).wait()
+      retval = local_train.MakeProcess(args.module_name,
+                                       package_root,
+                                       args=args.user_args,
+                                       task_type='master')
+    # Don't raise an exception because the users will already see the message.
+    # We want this to mimic calling the script directly as much as possible.
+    self.exit_code = retval

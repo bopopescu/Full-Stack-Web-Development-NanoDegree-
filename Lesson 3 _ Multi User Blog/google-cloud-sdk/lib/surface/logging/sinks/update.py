@@ -44,67 +44,78 @@ class Update(base.UpdateCommand):
         help=('Format of the log entries being exported. Detailed information: '
               'https://cloud.google.com/logging/docs/api/introduction_v2'),
         choices=('V1', 'V2'))
+    parser.add_argument(
+        '--unique-writer-identity', required=False, action='store_true',
+        default=True,
+        help=('Whether to create a new writer identity for this sink. Only '
+              'available for project sinks.'))
+    util.AddNonProjectArgs(parser, 'Update a sink')
 
   def Collection(self):
     return 'logging.sinks'
 
   def GetLogSink(self):
     """Returns a log sink specified by the arguments."""
-    client = self.context['logging_client_v1beta3']
+    client = util.GetClientV1()
+    ref = self.context['sink_reference']
     return client.projects_logs_sinks.Get(
-        self.context['sink_reference'].Request())
+        client.MESSAGES_MODULE.LoggingProjectsLogsSinksGetRequest(
+            projectsId=ref.projectsId,
+            logsId=ref.logsId,
+            sinksId=ref.sinksId))
 
   def GetLogServiceSink(self):
     """Returns a log service sink specified by the arguments."""
-    client = self.context['logging_client_v1beta3']
+    client = util.GetClientV1()
+    ref = self.context['sink_reference']
     return client.projects_logServices_sinks.Get(
-        self.context['sink_reference'].Request())
+        client.MESSAGES_MODULE.LoggingProjectsLogServicesSinksGetRequest(
+            projectsId=ref.projectsId,
+            logServicesId=ref.logServicesId,
+            sinksId=ref.sinksId))
 
-  def GetProjectSink(self):
-    """Returns a project sink specified by the arguments."""
-    # Use V2 logging API for project sinks.
-    client = self.context['logging_client_v2beta1']
-    messages = self.context['logging_messages_v2beta1']
+  def GetSink(self, parent):
+    """Returns a sink specified by the arguments."""
+    # Use V2 logging API.
     sink_ref = self.context['sink_reference']
-    return client.projects_sinks.Get(
-        messages.LoggingProjectsSinksGetRequest(
-            projectsId=sink_ref.projectsId, sinksId=sink_ref.sinksId))
+    return util.GetClient().projects_sinks.Get(
+        util.GetMessages().LoggingProjectsSinksGetRequest(
+            sinkName=util.CreateResourceName(
+                parent, 'sinks', sink_ref.sinksId)))
 
   def UpdateLogSink(self, sink_data):
     """Updates a log sink specified by the arguments."""
-    client = self.context['logging_client_v1beta3']
-    messages = self.context['logging_messages_v1beta3']
+    messages = util.GetMessagesV1()
     sink_ref = self.context['sink_reference']
-    return client.projects_logs_sinks.Update(
+    return util.GetClientV1().projects_logs_sinks.Update(
         messages.LoggingProjectsLogsSinksUpdateRequest(
             projectsId=sink_ref.projectsId, logsId=sink_ref.logsId,
             sinksId=sink_data['name'], logSink=messages.LogSink(**sink_data)))
 
   def UpdateLogServiceSink(self, sink_data):
     """Updates a log service sink specified by the arguments."""
-    client = self.context['logging_client_v1beta3']
-    messages = self.context['logging_messages_v1beta3']
+    messages = util.GetMessagesV1()
     sink_ref = self.context['sink_reference']
-    return client.projects_logServices_sinks.Update(
+    return util.GetClientV1().projects_logServices_sinks.Update(
         messages.LoggingProjectsLogServicesSinksUpdateRequest(
             projectsId=sink_ref.projectsId,
             logServicesId=sink_ref.logServicesId, sinksId=sink_data['name'],
             logSink=messages.LogSink(**sink_data)))
 
-  def UpdateProjectSink(self, sink_data):
-    """Updates a project sink specified by the arguments."""
-    # Use V2 logging API for project sinks.
-    client = self.context['logging_client_v2beta1']
-    messages = self.context['logging_messages_v2beta1']
-    sink_ref = self.context['sink_reference']
+  def UpdateSink(self, parent, sink_data, unique_writer_identity):
+    """Updates a sink specified by the arguments."""
+    # Use V2 logging API.
+    messages = util.GetMessages()
     # Change string value to enum.
     sink_data['outputVersionFormat'] = getattr(
         messages.LogSink.OutputVersionFormatValueValuesEnum,
         sink_data['outputVersionFormat'])
-    return client.projects_sinks.Update(
+    return util.GetClient().projects_sinks.Update(
         messages.LoggingProjectsSinksUpdateRequest(
-            projectsId=sink_ref.projectsId, sinksId=sink_data['name'],
-            logSink=messages.LogSink(**sink_data)))
+            sinkName=util.CreateResourceName(
+                parent, 'sinks', sink_data['name']),
+            logSink=messages.LogSink(**sink_data),
+            uniqueWriterIdentity=unique_writer_identity))
 
   def Run(self, args):
     """This is what gets called when the user runs this command.
@@ -117,6 +128,10 @@ class Update(base.UpdateCommand):
       The updated sink with its new destination.
     """
     util.CheckSinksCommandArguments(args)
+
+    if not args.unique_writer_identity:
+      log.warn(
+          '--unique-writer-identity is deprecated and will soon be removed.')
 
     # One of the flags is required to update the sink.
     # log_filter can be an empty string, so check explicitly for None.
@@ -133,13 +148,12 @@ class Update(base.UpdateCommand):
       elif args.service:
         sink = self.GetLogServiceSink()
       else:
-        sink = self.GetProjectSink()
+        sink = self.GetSink(util.GetParentFromArgs(args))
     except apitools_exceptions.HttpError as error:
-      project_sink = not args.log and not args.service
+      v2_sink = not args.log and not args.service
       # Suggest the user to add --log or --log-service flag.
-      if project_sink and exceptions.HttpException(
-          error).payload.status_code == 404:
-        log.status.Print(('Project sink was not found. '
+      if v2_sink and exceptions.HttpException(error).payload.status_code == 404:
+        log.status.Print(('Sink was not found. '
                           'Did you forget to add --log or --log-service flag?'))
       raise error
 
@@ -171,8 +185,10 @@ class Update(base.UpdateCommand):
         sink_data['outputVersionFormat'] = args.output_version_format
       else:
         sink_data['outputVersionFormat'] = sink.outputVersionFormat.name
-      result = util.TypedLogSink(self.UpdateProjectSink(sink_data))
-      kind = 'project sink'
+      result = util.TypedLogSink(
+          self.UpdateSink(util.GetParentFromArgs(args), sink_data,
+                          args.unique_writer_identity))
+      kind = 'sink'
     log.UpdatedResource(sink_ref, kind=kind)
     util.PrintPermissionInstructions(result.destination, result.writer_identity)
     return result
@@ -182,15 +198,15 @@ Update.detailed_help = {
     'DESCRIPTION': """\
         Changes the *[destination]* or *--log-filter* associated with a sink.
         If you don't include one of the *--log* or *--log-service* flags,
-        this command updates a project sink.
+        this command updates a v2 sink.
         The new destination must already exist and Stackdriver Logging must have
         permission to write to it.
         Log entries are exported to the new destination immediately.
     """,
     'EXAMPLES': """\
-        To only update a project sink filter, run:
+        To only update a sink filter, run:
 
-          $ {command} my-sink --log-filter='metadata.severity>=ERROR'
+          $ {command} my-sink --log-filter='severity>=ERROR'
 
         Detailed information about filters can be found at:
         [](https://cloud.google.com/logging/docs/view/advanced_filters)

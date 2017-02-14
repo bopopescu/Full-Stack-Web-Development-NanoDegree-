@@ -18,35 +18,93 @@ from apitools.base.py import encoding
 
 from googlecloudsdk.api_lib.dataproc import base_classes
 from googlecloudsdk.calliope import arg_parsers
+from googlecloudsdk.calliope import base
 
 
+@base.ReleaseTracks(base.ReleaseTrack.GA)
 class Hive(base_classes.JobSubmitter):
-  """Submit a Hive job to a cluster."""
+  """Submit a Hive job to a cluster.
 
-  detailed_help = {
-      'DESCRIPTION': '{description}',
-      'EXAMPLES': """\
-          To submit a Hive job with a local script, run:
+  Submit a Hive job to a cluster.
 
-            $ {command} --cluster my_cluster --file my_queries.q
+  ## EXAMPLES
 
-          To submit a Hive job with inline queries, run:
+  To submit a Hive job with a local script, run:
 
-            $ {command} --cluster my_cluster -e "CREATE EXTERNAL TABLE foo(bar int) LOCATION 'gs://my_bucket/'" -e "SELECT * FROM foo WHERE bar > 2"
-          """,
-  }
+    $ {command} --cluster my_cluster --file my_queries.q
+
+  To submit a Hive job with inline queries, run:
+
+    $ {command} --cluster my_cluster -e "CREATE EXTERNAL TABLE foo(bar int) LOCATION 'gs://my_bucket/'" -e "SELECT * FROM foo WHERE bar > 2"
+  """
 
   @staticmethod
   def Args(parser):
     super(Hive, Hive).Args(parser)
-    parser.add_argument(
+    HiveBase.Args(parser)
+
+  def ConfigureJob(self, job, args):
+    HiveBase.ConfigureJob(
+        self.context['dataproc_messages'],
+        job,
+        self.files_by_type,
+        args)
+
+  def PopulateFilesByType(self, args):
+    self.files_by_type.update(HiveBase.GetFilesByType(args))
+
+
+@base.ReleaseTracks(base.ReleaseTrack.BETA)
+class HiveBeta(base_classes.JobSubmitterBeta):
+  """Submit a Hive job to a cluster.
+
+  Submit a Hive job to a cluster.
+
+  ## EXAMPLES
+
+  To submit a Hive job with a local script, run:
+
+    $ {command} --cluster my_cluster --file my_queries.q
+
+  To submit a Hive job with inline queries, run:
+
+    $ {command} --cluster my_cluster -e "CREATE EXTERNAL TABLE foo(bar int) LOCATION 'gs://my_bucket/'" -e "SELECT * FROM foo WHERE bar > 2"
+  """
+
+  @staticmethod
+  def Args(parser):
+    """Parses commannd-line arguments specific to the beta release."""
+    super(HiveBeta, HiveBeta).Args(parser)
+    HiveBase.Args(parser)
+
+  def ConfigureJob(self, job, args):
+    HiveBase.ConfigureJob(
+        self.context['dataproc_messages'],
+        job,
+        self.files_by_type,
+        args)
+    # Apply labels
+    super(HiveBeta, self).ConfigureJob(job, args)
+
+  def PopulateFilesByType(self, args):
+    self.files_by_type.update(HiveBase.GetFilesByType(args))
+
+
+class HiveBase(object):
+  """Common functionality between release tracks."""
+
+  @staticmethod
+  def Args(parser):
+    """Performs command line parsing specific to Hive."""
+    driver = parser.add_mutually_exclusive_group(required=True)
+    driver.add_argument(
         '--execute', '-e',
         metavar='QUERY',
         dest='queries',
         action='append',
         default=[],
         help='A Hive query to execute as part of the job.')
-    parser.add_argument(
+    driver.add_argument(
         '--file', '-f',
         help='HCFS URI of file containing Hive script to execute as the job.')
     parser.add_argument(
@@ -71,24 +129,20 @@ class Hive(base_classes.JobSubmitter):
         action='store_true',
         help='Whether to continue if a single query fails.')
 
-  def PopulateFilesByType(self, args):
-    # TODO(user): Replace with argument group.
-    if not args.queries and not args.file:
-      raise ValueError('Must either specify --execute or --file.')
-    if args.queries and args.file:
-      raise ValueError('Cannot specify both --execute and --file.')
-
-    self.files_by_type.update({
+  @staticmethod
+  def GetFilesByType(args):
+    return {
         'jars': args.jars,
-        'file': args.file})
+        'file': args.file}
 
-  def ConfigureJob(self, job, args):
-    messages = self.context['dataproc_messages']
+  @staticmethod
+  def ConfigureJob(messages, job, files_by_type, args):
+    """Populates the hiveJob member of the given job."""
 
     hive_job = messages.HiveJob(
         continueOnFailure=args.continue_on_failure,
-        jarFileUris=self.files_by_type['jars'],
-        queryFileUri=self.files_by_type['file'])
+        jarFileUris=files_by_type['jars'],
+        queryFileUri=files_by_type['file'])
 
     if args.queries:
       hive_job.queryList = messages.QueryList(queries=args.queries)

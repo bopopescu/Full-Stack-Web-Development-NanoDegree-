@@ -164,6 +164,19 @@ def AddHttpRelatedCreationArgs(parser):
       """
 
 
+def AddHttpRelatedResponseArg(parser):
+  """Adds parser argument for HTTP response field."""
+
+  response = parser.add_argument(
+      '--response',
+      help='The string to match anywhere in the first 1024 bytes of response.')
+  response.detailed_help = """\
+      When empty, status code of the response determines health. When not empty,
+      presence of specified string in first 1024 characters of response body
+      determines health. Only ASCII characters allowed.
+      """
+
+
 def AddHttpRelatedUpdateArgs(parser):
   """Adds parser arguments for update subcommands related to HTTP."""
 
@@ -204,6 +217,48 @@ def AddTcpRelatedUpdateArgs(parser):
   _AddPortRelatedUpdateArgs(parser)
   AddProxyHeaderRelatedUpdateArgs(parser)
   _AddTcpRelatedArgsImpl(add_info_about_clearing=True, parser=parser)
+
+
+def AddUdpRelatedArgs(parser, request_and_response_required=True):
+  """Adds parser arguments related to UDP."""
+
+  port = parser.add_argument(
+      '--port',
+      help="""\
+      The UDP port number for the health request. Default value is not set.
+      """,
+      type=int)
+  port.detailed_help = """\
+      The UDP port number that this health check monitors. The default is not
+      set.
+      """
+
+  port_name = parser.add_argument(
+      '--port-name',
+      help='The port name for the health request. Default is empty.')
+  port_name.detailed_help = """\
+      The port name that this health check monitors. By default, this is
+      empty. Setting this to an empty string will clear any existing
+      port-name value.
+      """
+
+  request = parser.add_argument(
+      '--request',
+      required=request_and_response_required,
+      help='Application data to send in payload of an UDP packet.')
+  request.detailed_help = """\
+      Application data to send in payload of an UDP packet. It is an error if
+      this is empty.
+      """
+
+  response = parser.add_argument(
+      '--response',
+      required=request_and_response_required,
+      help='The bytes to match against the beginning of the response data.')
+  response.detailed_help = """\
+      The bytes to match against the beginning of the response data.
+      It is an error if this is empty.
+      """
 
 
 def _AddPortRelatedCreationArgs(parser):
@@ -284,29 +339,23 @@ def _AddTcpRelatedArgsImpl(add_info_about_clearing, parser):
   response.detailed_help = response_detailed_help
 
 
-def AddProxyHeaderRelatedCreateArgs(parser):
+def AddProxyHeaderRelatedCreateArgs(parser, default='NONE'):
   """Adds parser arguments for creation related to ProxyHeader."""
 
   parser.add_argument(
       '--proxy-header',
       choices={
           'NONE': 'No proxy header is added.',
-          'PROXY_V1': 'Adds the header "PROXY UNKNOWN\\r\\n".',
+          'PROXY_V1': r'Adds the header "PROXY UNKNOWN\r\n".',
       },
-      default='NONE',
+      default=default,
       help='The type of proxy protocol header to be sent to the backend.')
 
 
 def AddProxyHeaderRelatedUpdateArgs(parser):
   """Adds parser arguments for update related to ProxyHeader."""
 
-  parser.add_argument(
-      '--proxy-header',
-      choices={
-          'NONE': 'No proxy header is added.',
-          'PROXY_V1': 'Adds the header "PROXY UNKNOWN\\r\\n".',
-      },
-      help='The type of proxy protocol header to be sent to the backend.')
+  AddProxyHeaderRelatedCreateArgs(parser, default=None)
 
 
 def CheckProtocolAgnosticArgs(args):

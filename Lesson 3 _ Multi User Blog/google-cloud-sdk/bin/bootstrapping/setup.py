@@ -22,13 +22,6 @@ lib_dir = os.path.join(root_dir, 'lib')
 third_party_dir = os.path.join(lib_dir, 'third_party')
 
 sys.path = [lib_dir, third_party_dir] + sys.path
-# Add this so that all subprocess will have this on the path as well
-python_path = os.environ.get('PYTHONPATH')
-if python_path:
-  os.environ['PYTHONPATH'] = os.pathsep.join(
-      [lib_dir, third_party_dir, python_path])
-else:
-  os.environ['PYTHONPATH'] = os.pathsep.join([lib_dir, third_party_dir])
 
 # pylint: disable=g-import-not-at-top
 from googlecloudsdk.core.util import platforms

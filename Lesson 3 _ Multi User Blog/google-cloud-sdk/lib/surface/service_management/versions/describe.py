@@ -14,13 +14,17 @@
 
 """service-management versions describe command."""
 
-from googlecloudsdk.api_lib.service_management import base_classes
-from googlecloudsdk.api_lib.service_management import common_flags
+from googlecloudsdk.api_lib.service_management import services_util
 from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.service_management import common_flags
 
 
-class Describe(base.DescribeCommand, base_classes.BaseServiceManagementCommand):
-  """Describes the configuration for a given version of a service."""
+class Describe(base.DescribeCommand):
+  """Describes the configuration for a given version of a service.
+
+  DEPRECATED: This command is deprecated and will be removed.
+  Use 'gcloud beta service-management configs describe' instead.
+  """
 
   @staticmethod
   def Args(parser):
@@ -31,7 +35,7 @@ class Describe(base.DescribeCommand, base_classes.BaseServiceManagementCommand):
           on the command line after this command. Positional arguments are
           allowed.
     """
-    common_flags.service_flag(
+    common_flags.producer_service_flag(
         suffix='from which to retrieve the configuration').AddToParser(parser)
 
     parser.add_argument('--version',
@@ -57,16 +61,18 @@ class Describe(base.DescribeCommand, base_classes.BaseServiceManagementCommand):
       return self._GetLatestVersionConfig(args.service)
 
   def _GetSpecificVersionConfig(self, service, version):
-    request = self.services_messages.ServicemanagementServicesConfigsGetRequest(
-        serviceName=service,
-        configId=version)
-    return self.services_client.services_configs.Get(request)
+    messages = services_util.GetMessagesModule()
+    client = services_util.GetClientInstance()
+    request = messages.ServicemanagementServicesConfigsGetRequest(
+        serviceName=service, configId=version)
+    return client.services_configs.Get(request)
 
   def _GetLatestVersionConfig(self, service):
-    request = self.services_messages.ServicemanagementServicesGetRequest(
-        serviceName=service,
-        expand='service_config')
-    service_result = self.services_client.services.Get(request)
+    messages = services_util.GetMessagesModule()
+    client = services_util.GetClientInstance()
+    request = messages.ServicemanagementServicesGetRequest(
+        serviceName=service, expand='service_config')
+    service_result = client.services.Get(request)
 
     # Return the service config from the service result
     return service_result.serviceConfig

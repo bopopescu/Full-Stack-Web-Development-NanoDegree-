@@ -18,16 +18,15 @@ import argparse
 
 from apitools.base.py import exceptions as apitools_exceptions
 
-from googlecloudsdk.api_lib.compute import constants
+from googlecloudsdk.api_lib.compute import constants as compute_constants
 from googlecloudsdk.api_lib.container import api_adapter
 from googlecloudsdk.api_lib.container import util
-from googlecloudsdk.calliope import actions
 from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.command_lib.container import flags
+from googlecloudsdk.command_lib.container import messages
 from googlecloudsdk.core import log
-from googlecloudsdk.core import properties
 
 
 DETAILED_HELP = {
@@ -59,11 +58,8 @@ def _Args(parser):
     parser: An argparse.ArgumentParser-like object. It is mocked out in order
         to capture some information, but behaves like an ArgumentParser.
   """
-  parser.add_argument('name', help='The name of the node pool to create.')
-  parser.add_argument(
-      '--cluster',
-      help='The cluster to add the node pool to.',
-      action=actions.StoreProperty(properties.VALUES.container.cluster))
+  flags.AddNodePoolNameArg(parser, 'The name of the node pool to create.')
+  flags.AddNodePoolClusterFlag(parser, 'The cluster to add the node pool to.')
   parser.add_argument(
       '--enable-cloud-endpoints',
       action='store_true',
@@ -109,19 +105,26 @@ are always added, even if not explicitly specified.
 SCOPE can be either the full URI of the scope or an alias.
 Available aliases are:
 
+[options="header",format="csv",grid="none",frame="none"]
+|========
 Alias,URI
 {aliases}
+|========
 """.format(
-    aliases='\n        '.join(
-        ','.join(value) for value in
-        sorted(constants.SCOPES.iteritems()))))
-  parser.add_argument(
-      '--tags',
-      help=argparse.SUPPRESS,
-      type=arg_parsers.ArgList(min_length=1),
-      metavar='TAGS')
+    aliases=compute_constants.ScopesForHelp()))
   flags.AddImageTypeFlag(parser, 'node pool')
   flags.AddNodeLabelsFlag(parser, for_node_pool=True)
+  flags.AddTagsFlag(parser, """\
+Applies the given Compute Engine tags (comma separated) on all nodes in the new
+node-pool. Example:
+
+  $ {command} node-pool-1 --cluster=example-cluster --tags=tag1,tag2
+
+New nodes, including ones created by resize or recreate, will have these tags
+on the Compute Engine API instance object and can be used in firewall rules.
+See https://cloud.google.com/sdk/gcloud/reference/compute/firewall-rules/create
+for examples.
+""")
 
 
 @base.ReleaseTracks(base.ReleaseTrack.GA)
@@ -131,8 +134,12 @@ class Create(base.CreateCommand):
   @staticmethod
   def Args(parser):
     _Args(parser)
-    flags.AddClusterAutoscalingFlags(parser, suppressed=True)
+    flags.AddClusterAutoscalingFlags(parser, hidden=True)
     flags.AddLocalSSDFlag(parser, suppressed=True)
+    flags.AddPreemptibleFlag(parser, for_node_pool=True, suppressed=True)
+    flags.AddEnableAutoRepairFlag(parser, for_node_pool=True, suppressed=True)
+    flags.AddEnableAutoUpgradeFlag(parser, for_node_pool=True, suppressed=True)
+    flags.AddServiceAccountFlag(parser, suppressed=True)
 
   def ParseCreateNodePoolOptions(self, args):
     return api_adapter.CreateNodePoolOptions(
@@ -147,7 +154,11 @@ class Create(base.CreateCommand):
         enable_autoscaling=args.enable_autoscaling,
         max_nodes=args.max_nodes,
         min_nodes=args.min_nodes,
-        image_type=args.image_type)
+        image_type=args.image_type,
+        preemptible=args.preemptible,
+        enable_autorepair=args.enable_autorepair,
+        enable_autoupgrade=args.enable_autoupgrade,
+        service_account=args.service_account)
 
   def Run(self, args):
     """This is what gets called when the user runs this command.
@@ -172,6 +183,15 @@ class Create(base.CreateCommand):
         args.scopes = []
       pool_ref = adapter.ParseNodePool(args.name)
       options = self.ParseCreateNodePoolOptions(args)
+
+      if options.enable_autorepair is not None:
+        log.status.Print(messages.AutoUpdateUpgradeRepairMessage(
+            options.enable_autorepair, 'autorepair'))
+
+      if options.enable_autoupgrade is not None:
+        log.status.Print(messages.AutoUpdateUpgradeRepairMessage(
+            options.enable_autoupgrade, 'autoupgrade'))
+
       operation_ref = adapter.CreateNodePool(pool_ref, options)
 
       adapter.WaitForOperation(
@@ -199,8 +219,12 @@ class CreateBeta(Create):
   @staticmethod
   def Args(parser):
     _Args(parser)
-    flags.AddClusterAutoscalingFlags(parser, suppressed=True)
+    flags.AddClusterAutoscalingFlags(parser, hidden=True)
     flags.AddLocalSSDFlag(parser)
+    flags.AddPreemptibleFlag(parser, for_node_pool=True)
+    flags.AddEnableAutoRepairFlag(parser, for_node_pool=True, suppressed=True)
+    flags.AddEnableAutoUpgradeFlag(parser, for_node_pool=True)
+    flags.AddServiceAccountFlag(parser)
 
 
 @base.ReleaseTracks(base.ReleaseTrack.ALPHA)
@@ -212,6 +236,10 @@ class CreateAlpha(Create):
     _Args(parser)
     flags.AddClusterAutoscalingFlags(parser)
     flags.AddLocalSSDFlag(parser)
+    flags.AddPreemptibleFlag(parser, for_node_pool=True)
+    flags.AddEnableAutoRepairFlag(parser, for_node_pool=True, suppressed=True)
+    flags.AddEnableAutoUpgradeFlag(parser, for_node_pool=True)
+    flags.AddServiceAccountFlag(parser)
 
 
 Create.detailed_help = DETAILED_HELP

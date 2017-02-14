@@ -19,76 +19,28 @@ from googlecloudsdk.api_lib.compute import managed_instance_groups_utils
 from googlecloudsdk.api_lib.compute import path_simplifier
 from googlecloudsdk.api_lib.compute import utils
 from googlecloudsdk.calliope import base
+from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.command_lib.compute import flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
 from googlecloudsdk.command_lib.compute.instance_groups import flags as instance_groups_flags
+from googlecloudsdk.core import properties
 
 
-@base.ReleaseTracks(base.ReleaseTrack.GA)
-class Delete(base_classes.ZonalDeleter):
-  """Delete Google Compute Engine managed instance group."""
-
-  @staticmethod
-  def Args(parser):
-    instance_groups_flags.ZONAL_INSTANCE_GROUP_MANAGERS_ARG.AddArgument(parser)
-
-  @property
-  def service(self):
-    return self.compute.instanceGroupManagers
-
-  @property
-  def resource_type(self):
-    return 'instanceGroupManagers'
-
-  def _GenerateAutoscalerDeleteRequests(self, mig_requests):
-    """Generates Delete requestes for autoscalers attached to instance groups.
-
-    Args:
-      mig_requests: Messages which will be sent to delete instance group
-        managers.
-
-    Returns:
-      Messages, which will be sent to delete autoscalers.
-    """
-    migs = [(request.instanceGroupManager, 'zone', request.zone)
-            for request in mig_requests]
-    zones = sorted(set(zip(*migs)[2]))
-    autoscalers_to_delete = managed_instance_groups_utils.AutoscalersForMigs(
-        migs=migs,
-        autoscalers=managed_instance_groups_utils.AutoscalersForZones(
-            zones=zones,
-            project=self.project,
-            compute=self.compute,
-            http=self.http,
-            batch_url=self.batch_url),
-        project=self.project)
-    requests = []
-    for autoscaler in autoscalers_to_delete:
-      as_ref = self.resources.Parse(
-          autoscaler.name, collection='compute.autoscalers',
-          params={'zone': autoscaler.zone})
-
-      request = self.messages.ComputeAutoscalersDeleteRequest(
-          project=self.project)
-      request.zone = as_ref.zone
-      request.autoscaler = as_ref.Name()
-      requests.append(request)
-    return requests
-
-  def Run(self, args):
-    # CreateRequests() propmpts user to confirm deletion so it should be a first
-    # thing to be executed in this function.
-    delete_managed_instance_groups_requests = self.CreateRequests(args)
-    super(Delete, self).Run(
-        args,
-        request_protobufs=self._GenerateAutoscalerDeleteRequests(
-            mig_requests=delete_managed_instance_groups_requests),
-        service=self.compute.autoscalers)
-    super(Delete, self).Run(
-        args, request_protobufs=delete_managed_instance_groups_requests)
+def _RaiseIfMixZoneRegion(igm_refs):
+  zones_num = 0
+  regions_num = 0
+  for igm in igm_refs:
+    if hasattr(igm, 'zone'):
+      zones_num += 1
+    if hasattr(igm, 'region'):
+      regions_num += 1
+  if zones_num > 0 and regions_num > 0:
+    raise exceptions.ToolException(
+        'Not Supported: You can not mix delete of zonal and regional '
+        'Managed Instance Groups')
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.ALPHA)
-class DeleteAlpha(base_classes.BaseAsyncMutator):
+class Delete(base.DeleteCommand):
   """Delete Google Compute Engine managed instance group."""
 
   @staticmethod
@@ -96,18 +48,12 @@ class DeleteAlpha(base_classes.BaseAsyncMutator):
     instance_groups_flags.MULTISCOPE_INSTANCE_GROUP_MANAGERS_ARG.AddArgument(
         parser)
 
-  @property
-  def service(self):
-    return self.compute.instanceGroupManagers
-
-  @property
-  def method(self):
-    return 'Delete'
-
-  def _GenerateAutoscalerDeleteRequests(self, mig_requests):
+  def _GenerateAutoscalerDeleteRequests(self, holder, project, mig_requests):
     """Generates Delete requestes for autoscalers attached to instance groups.
 
     Args:
+      holder: ComputeApiHolder, object encapsulating compute api.
+      project: str, project this request should apply to.
       mig_requests: Messages which will be sent to delete instance group
         managers.
 
@@ -127,29 +73,31 @@ class DeleteAlpha(base_classes.BaseAsyncMutator):
     zones = sorted(set(zip(*zone_migs)[2])) if zone_migs else []
     regions = sorted(set(zip(*region_migs)[2])) if region_migs else []
 
+    client = holder.client.apitools_client
+    messages = client.MESSAGES_MODULE
     autoscalers_to_delete = managed_instance_groups_utils.AutoscalersForMigs(
         migs=zone_migs + region_migs,
         autoscalers=managed_instance_groups_utils.AutoscalersForLocations(
             zones=zones,
             regions=regions,
-            project=self.project,
-            compute=self.compute,
-            http=self.http,
-            batch_url=self.batch_url),
-        project=self.project)
+            project=project,
+            compute=client,
+            http=client.http,
+            batch_url=holder.client.batch_url),
+        project=project)
     requests = []
     for autoscaler in autoscalers_to_delete:
       if autoscaler.zone:
-        service = self.compute.autoscalers
-        request = service.GetRequestType('Delete')(
+        service = client.autoscalers
+        request = messages.ComputeAutoscalersDeleteRequest(
             zone=path_simplifier.Name(autoscaler.zone))
       else:
-        service = self.compute.regionAutoscalers
-        request = service.GetRequestType('Delete')(
+        service = client.regionAutoscalers
+        request = messages.ComputeRegionAutoscalersDeleteRequest(
             region=path_simplifier.Name(autoscaler.region))
 
       request.autoscaler = autoscaler.name
-      request.project = self.project
+      request.project = project
       requests.append((service, 'Delete', request))
     return requests
 
@@ -165,49 +113,68 @@ class DeleteAlpha(base_classes.BaseAsyncMutator):
     else:
       return None
 
-  def CreateRequests(self, args):
+  def _CreateDeleteRequests(self, client, igm_refs):
     """Returns a list of delete messages for instance group managers."""
-    # pylint:disable=too-many-function-args
+
+    messages = client.MESSAGES_MODULE
+    requests = []
+    for ref in igm_refs:
+      if ref.Collection() == 'compute.instanceGroupManagers':
+        service = client.instanceGroupManagers
+        request = messages.ComputeInstanceGroupManagersDeleteRequest(
+            instanceGroupManager=ref.Name(),
+            project=ref.project,
+            zone=ref.zone)
+      elif ref.Collection() == 'compute.regionInstanceGroupManagers':
+        service = client.regionInstanceGroupManagers
+        request = messages.ComputeRegionInstanceGroupManagersDeleteRequest(
+            instanceGroupManager=ref.Name(),
+            project=ref.project,
+            region=ref.region)
+      else:
+        raise ValueError('Unknown reference type {0}'.format(ref.Collection()))
+
+      requests.append((service, 'Delete', request))
+    return requests
+
+  def Run(self, args):
+    holder = base_classes.ComputeApiHolder(self.ReleaseTrack())
+
+    project = properties.VALUES.core.project.Get(required=True)
     igm_refs = (
         instance_groups_flags.MULTISCOPE_INSTANCE_GROUP_MANAGERS_ARG.
         ResolveAsResource)(
-            args, self.resources, default_scope=flags.ScopeEnum.ZONE,
-            scope_lister=flags.GetDefaultScopeLister(
-                self.compute_client, self.project))
+            args, holder.resources, default_scope=compute_scope.ScopeEnum.ZONE,
+            scope_lister=flags.GetDefaultScopeLister(holder.client, project))
+
     scope_name = self._GetCommonScopeNameForRefs(igm_refs)
 
     utils.PromptForDeletion(
         igm_refs, scope_name=scope_name, prompt_title=None)
 
-    requests = []
-    for ref in igm_refs:
-      if ref.Collection() == 'compute.instanceGroupManagers':
-        service = self.compute.instanceGroupManagers
-        request = service.GetRequestType(self.method)(
-            instanceGroupManager=ref.Name(),
-            project=self.project,
-            zone=ref.zone)
-      else:
-        service = self.compute.regionInstanceGroupManagers
-        request = service.GetRequestType(self.method)(
-            instanceGroupManager=ref.Name(),
-            project=self.project,
-            region=ref.region)
+    # Disable ability to mix zonal and regional MIG delete in one command.
+    # This is temporary workaround of missing functionality
+    # TODO(b/32276307)
+    _RaiseIfMixZoneRegion(igm_refs)
 
-      requests.append((service, self.method, request))
-    return requests
+    requests = list(self._CreateDeleteRequests(
+        holder.client.apitools_client, igm_refs))
 
-  def Run(self, args):
-    # CreateRequests() propmpts user to confirm deletion so it should be a first
-    # thing to be executed in this function.
-    delete_managed_instance_groups_requests = self.CreateRequests(args)
-    super(self.__class__, self).Run(
-        args,
-        request_protobufs=self._GenerateAutoscalerDeleteRequests(
-            mig_requests=delete_managed_instance_groups_requests),
-        service=self.compute.autoscalers)
-    super(self.__class__, self).Run(
-        args, request_protobufs=delete_managed_instance_groups_requests)
+    # Delete autoscalers first.
+    errors = []
+    resources = holder.client.MakeRequests(
+        self._GenerateAutoscalerDeleteRequests(
+            holder, project, mig_requests=requests),
+        errors)
+    if errors:
+      utils.RaiseToolException(errors)
+
+    # Now delete instance group managers.
+    errors = []
+    resources += holder.client.MakeRequests(requests, errors)
+    if errors:
+      utils.RaiseToolException(errors)
+    return resources
 
 
 Delete.detailed_help = {
@@ -217,4 +184,3 @@ Delete.detailed_help = {
 groups.
         """,
 }
-DeleteAlpha.detailed_help = Delete.detailed_help

@@ -16,14 +16,31 @@
    There are separate alpha, beta, and GA command classes in this file.
 """
 
+import copy
+
 from googlecloudsdk.api_lib.compute import backend_services_utils
 from googlecloudsdk.api_lib.compute import base_classes
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
-from googlecloudsdk.command_lib.compute import flags as compute_flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
 from googlecloudsdk.command_lib.compute.backend_services import flags
 from googlecloudsdk.core import log
-from googlecloudsdk.third_party.py27 import py27_copy as copy
+
+
+def AddIapFlag(parser):
+  iap_flag = flags.AddIap(parser)
+  # TODO(b/34479878): It would be nice if the auto-generated help text were
+  # a bit better so we didn't need to be quite so verbose here.
+  iap_flag.detailed_help = """\
+    Change the Identity Aware Proxy (IAP) service configuration for the backend
+    service. You can set IAP to 'enabled' or 'disabled', or modify the OAuth2
+    client configuration (oauth2-client-id and oauth2-client-secret) used by
+    IAP. If any fields are unspecified, their values will not be modified. For
+    instance, if IAP is enabled, '--iap=disabled' will disable IAP, and a
+    subsequent '--iap=enabled' will then enable it with the same OAuth2 client
+    configuration as the first time it was enabled. See
+    https://cloud.google.com/iap/ for more information about this feature.
+    """
 
 
 @base.ReleaseTracks(base.ReleaseTrack.GA)
@@ -32,7 +49,7 @@ class UpdateGA(base_classes.ReadWriteCommand):
 
   @staticmethod
   def Args(parser):
-    flags.GLOBAL_BACKEND_SERVICE_ARG.AddArgument(parser)
+    flags.GLOBAL_REGIONAL_BACKEND_SERVICE_ARG.AddArgument(parser)
     flags.AddDescription(parser)
     flags.AddHealthChecks(parser)
     flags.AddHttpHealthChecks(parser)
@@ -41,7 +58,7 @@ class UpdateGA(base_classes.ReadWriteCommand):
     flags.AddPortName(parser)
     flags.AddProtocol(parser, default=None)
     flags.AddEnableCdn(parser, default=None)
-    flags.AddSessionAffinity(parser, internal_lb=False)
+    flags.AddSessionAffinity(parser, internal_lb=True)
     flags.AddAffinityCookieTtl(parser)
     flags.AddConnectionDrainingTimeout(parser)
 
@@ -61,7 +78,7 @@ class UpdateGA(base_classes.ReadWriteCommand):
     if self.regional:
       return flags.GLOBAL_REGIONAL_BACKEND_SERVICE_ARG.ResolveAsResource(
           args, self.resources,
-          default_scope=compute_flags.ScopeEnum.GLOBAL)
+          default_scope=compute_scope.ScopeEnum.GLOBAL)
 
     return flags.GLOBAL_BACKEND_SERVICE_ARG.ResolveAsResource(
         args, self.resources)
@@ -146,7 +163,7 @@ class UpdateGA(base_classes.ReadWriteCommand):
   def ValidateArgs(self, args):
     if not any([
         args.affinity_cookie_ttl is not None,
-        args.connection_draining_timeout,
+        args.connection_draining_timeout is not None,
         args.description is not None,
         args.enable_cdn is not None,
         args.health_checks,
@@ -167,9 +184,21 @@ class UpdateGA(base_classes.ReadWriteCommand):
   def Run(self, args):
     self.ValidateArgs(args)
 
-    self.regional = backend_services_utils.IsRegionalRequest(self, args)
+    self.regional = backend_services_utils.IsRegionalRequest(args)
 
     return super(UpdateGA, self).Run(args)
+
+  def _ApplyIapArgs(self, iap_arg, existing, replacement):
+    if iap_arg is not None:
+      existing_iap = existing.iap
+      replacement.iap = backend_services_utils.GetIAP(
+          iap_arg, self.messages, existing_iap_settings=existing_iap)
+      if replacement.iap.enabled and not (existing_iap and
+                                          existing_iap.enabled):
+        log.warning(backend_services_utils.IapBestPracticesNotice())
+      if (replacement.iap.enabled and replacement.protocol is not
+          self.messages.BackendService.ProtocolValueValuesEnum.HTTPS):
+        log.warning(backend_services_utils.IapHttpWarning())
 
 
 @base.ReleaseTracks(base.ReleaseTrack.ALPHA)
@@ -189,9 +218,13 @@ class UpdateAlpha(UpdateGA):
 
     flags.AddConnectionDrainingTimeout(parser)
     flags.AddEnableCdn(parser, default=None)
+    flags.AddCacheKeyIncludeProtocol(parser, default=None)
+    flags.AddCacheKeyIncludeHost(parser, default=None)
+    flags.AddCacheKeyIncludeQueryString(parser, default=None)
+    flags.AddCacheKeyQueryStringList(parser)
     flags.AddSessionAffinity(parser, internal_lb=True)
     flags.AddAffinityCookieTtl(parser)
-    flags.AddIap(parser)
+    AddIapFlag(parser)
 
   def Modify(self, args, existing):
     replacement = super(UpdateAlpha, self).Modify(args, existing)
@@ -200,15 +233,21 @@ class UpdateAlpha(UpdateGA):
       replacement.connectionDraining = self.messages.ConnectionDraining(
           drainingTimeoutSec=args.connection_draining_timeout)
 
-    if args.iap:
-      replacement.iap = backend_services_utils.GetIAP(
-          args, self.messages,
-          existing_iap_settings=getattr(existing, 'iap', None))
-      if (replacement.iap.enabled and replacement.protocol is not
-          self.messages.BackendService.ProtocolValueValuesEnum.HTTPS):
-        log.warning('IAP has been enabled for a backend service that does '
-                    'not use HTTPS. Data sent from the Load Balancer to your '
-                    'VM will not be encrypted.')
+    self._ApplyIapArgs(args.iap, existing, replacement)
+
+    cache_key_policy = self.messages.CacheKeyPolicy()
+    if (replacement.cdnPolicy is not None and
+        replacement.cdnPolicy.cacheKeyPolicy is not None):
+      cache_key_policy = replacement.cdnPolicy.cacheKeyPolicy
+    backend_services_utils.ValidateCacheKeyPolicyArgs(args)
+    backend_services_utils.UpdateCacheKeyPolicy(args, cache_key_policy)
+    if (args.cache_key_include_protocol is not None or
+        args.cache_key_include_host is not None or
+        args.cache_key_include_query_string is not None or
+        args.cache_key_query_string_whitelist is not None or
+        args.cache_key_query_string_blacklist is not None):
+      replacement.cdnPolicy = self.messages.BackendServiceCdnPolicy(
+          cacheKeyPolicy=cache_key_policy)
 
     return replacement
 
@@ -218,7 +257,13 @@ class UpdateAlpha(UpdateGA):
         args.connection_draining_timeout is not None,
         args.description is not None,
         args.enable_cdn is not None,
+        args.cache_key_include_protocol is not None,
+        args.cache_key_include_host is not None,
+        args.cache_key_include_query_string is not None,
+        args.cache_key_query_string_whitelist is not None,
+        args.cache_key_query_string_blacklist is not None,
         args.http_health_checks,
+        args.iap is not None,
         args.port,
         args.port_name,
         args.protocol,
@@ -226,7 +271,6 @@ class UpdateAlpha(UpdateGA):
         args.timeout is not None,
         getattr(args, 'health_checks', None),
         getattr(args, 'https_health_checks', None),
-        getattr(args, 'iap', None),
     ]):
       raise exceptions.ToolException('At least one property must be modified.')
 
@@ -250,6 +294,7 @@ class UpdateBeta(UpdateGA):
     flags.AddEnableCdn(parser, default=None)
     flags.AddSessionAffinity(parser, internal_lb=True)
     flags.AddAffinityCookieTtl(parser)
+    AddIapFlag(parser)
 
   def Modify(self, args, existing):
     replacement = super(UpdateBeta, self).Modify(args, existing)
@@ -257,6 +302,8 @@ class UpdateBeta(UpdateGA):
     if args.connection_draining_timeout is not None:
       replacement.connectionDraining = self.messages.ConnectionDraining(
           drainingTimeoutSec=args.connection_draining_timeout)
+
+    self._ApplyIapArgs(args.iap, existing, replacement)
 
     return replacement
 
@@ -269,6 +316,7 @@ class UpdateBeta(UpdateGA):
         args.health_checks,
         args.http_health_checks,
         args.https_health_checks,
+        args.iap is not None,
         args.port,
         args.port_name,
         args.protocol,

@@ -2,6 +2,8 @@
 #
 # Copyright 2013 Google Inc. All Rights Reserved.
 #
+# This is script no longer needed as of release 133.0.0
+# It is here so that git repositories set before this version continue to work.
 
 
 # <cloud-sdk-sh-preamble>

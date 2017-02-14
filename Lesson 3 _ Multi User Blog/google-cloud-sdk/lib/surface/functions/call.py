@@ -44,12 +44,16 @@ class Call(base.Command):
       Function call results (error or result with execution id)
     """
     project = properties.VALUES.core.project.Get(required=True)
-    # TODO(b/25364251): Use resource parser.
-    name = 'projects/{0}/locations/{1}/functions/{2}'.format(
-        project, args.region, args.name)
+    registry = self.context['registry']
     client = self.context['functions_client']
     messages = self.context['functions_messages']
+    function_ref = registry.Parse(
+        args.name, params={'projectsId': project, 'locationsId': args.region},
+        collection='cloudfunctions.projects.locations.functions')
+    # Do not retry calling function - most likely user want to know that the
+    # call failed and debug.
+    client.projects_locations_functions.client.num_retries = 0
     return client.projects_locations_functions.Call(
         messages.CloudfunctionsProjectsLocationsFunctionsCallRequest(
-            name=name,
+            name=function_ref.RelativeName(),
             callFunctionRequest=messages.CallFunctionRequest(data=args.data)))

@@ -33,7 +33,7 @@ class Binding(_messages.Message):
       identifier that represents anyone    who is authenticated with a Google
       account or a service account.  * `user:{emailid}`: An email address that
       represents a specific Google    account. For example, `alice@gmail.com`
-      or `joe@example.com`.  * `serviceAccount:{emailid}`: An email address
+      or `joe@example.com`.   * `serviceAccount:{emailid}`: An email address
       that represents a service    account. For example, `my-other-
       app@appspot.gserviceaccount.com`.  * `group:{emailid}`: An email address
       that represents a Google group.    For example, `admins@example.com`.  *
@@ -293,24 +293,24 @@ class FolderOperation(_messages.Message):
   """Metadata describing a long running folder operation
 
   Enums:
-    OperationTypeValueValuesEnum: The type of folder operation.
+    OperationTypeValueValuesEnum: The type of this operation.
 
   Fields:
     destinationParent: The resource name of the folder or organization we are
       either creating the folder under or moving the folder to.
     displayName: The display name of the folder.
-    operationType: The type of folder operation.
+    operationType: The type of this operation.
     sourceParent: The resource name of the folder's parent. Only applicable
       when the operation_type is MOVE.
   """
 
   class OperationTypeValueValuesEnum(_messages.Enum):
-    """The type of folder operation.
+    """The type of this operation.
 
     Values:
-      OPERATION_TYPE_UNSPECIFIED: Operation type was unspecified.
-      CREATE: Operation was create folder.
-      MOVE: Operation was move folder.
+      OPERATION_TYPE_UNSPECIFIED: Operation type not specified.
+      CREATE: A create folder operation.
+      MOVE: A move folder operation.
     """
     OPERATION_TYPE_UNSPECIFIED = 0
     CREATE = 1
@@ -323,33 +323,29 @@ class FolderOperation(_messages.Message):
 
 
 class FolderOperationError(_messages.Message):
-  """Information about a failed folder operation. If a long running folder
-  operations fails, then we will return this message in the
-  Operation.error.details field.
+  """A classification of the Folder Operation error.
 
   Enums:
-    ErrorMessageIdValueValuesEnum: The message id for the operation error that
-      was experienced.
+    ErrorMessageIdValueValuesEnum: The type of operation error experienced.
 
   Fields:
-    errorMessageId: The message id for the operation error that was
-      experienced.
+    errorMessageId: The type of operation error experienced.
   """
 
   class ErrorMessageIdValueValuesEnum(_messages.Enum):
-    """The message id for the operation error that was experienced.
+    """The type of operation error experienced.
 
     Values:
-      UNDEFINED_ERROR: An undefined error type.
+      ERROR_TYPE_UNSPECIFIED: The error type was unrecognized or unspecified.
       FOLDER_HEIGHT_VIOLATION: The attempted action would violate the max
         folder depth constraint.
       MAX_CHILD_FOLDERS_VIOLATION: The attempted action would violate the max
         child folders constraint.
       FOLDER_NAME_UNIQUENESS_VIOLATION: The attempted action would violate the
-        folder name locally-unique constraint.
+        locally-unique folder display_name constraint.
       RESOURCE_DELETED: The resource being moved has been deleted.
-      PARENT_DELETED: The folder or organization a resource was being added to
-        has been deleted.
+      PARENT_DELETED: The resource a folder was being added to has been
+        deleted.
       CYCLE_INTRODUCED_ERROR: The attempted action would introduce cycle in
         resource path.
       FOLDER_ALREADY_BEING_MOVED: The attempted action would move a folder
@@ -357,7 +353,7 @@ class FolderOperationError(_messages.Message):
       FOLDER_TO_DELETE_NON_EMPTY: The folder the caller is trying to delete
         contains active resources.
     """
-    UNDEFINED_ERROR = 0
+    ERROR_TYPE_UNSPECIFIED = 0
     FOLDER_HEIGHT_VIOLATION = 1
     MAX_CHILD_FOLDERS_VIOLATION = 2
     FOLDER_NAME_UNIQUENESS_VIOLATION = 3
@@ -548,7 +544,7 @@ class Project(_messages.Message):
       can be associated with a given resource.  Clients should store labels in
       a representation such as JSON that does not depend on specific
       characters being disallowed.  Example: <code>"environment" :
-      "dev"</code>  Read-write.
+      "dev"</code> Read-write.
 
   Fields:
     createTime: Creation time.  Read-only.
@@ -560,21 +556,23 @@ class Project(_messages.Message):
       can be associated with a given resource.  Clients should store labels in
       a representation such as JSON that does not depend on specific
       characters being disallowed.  Example: <code>"environment" :
-      "dev"</code>  Read-write.
+      "dev"</code> Read-write.
     lifecycleState: The Project lifecycle state.  Read-only.
     name: The user-assigned display name of the Project. It must be 4 to 30
       characters. Allowed characters are: lowercase and uppercase letters,
       numbers, hyphen, single-quote, double-quote, space, and exclamation
-      point.  Example: <code>My Project</code>  Read-write.
+      point.  Example: <code>My Project</code> Read-write.
     parent: An optional reference to a parent Resource.  The only supported
       parent type is "organization". Once set, the parent cannot be modified.
-      Read-write.
+      The `parent` can be set on creation or using the `UpdateProject` method;
+      the end user must have the `resourcemanager.projects.create` permission
+      on the parent.  Read-write.
     projectId: The unique, user-assigned ID of the Project. It must be 6 to 30
       lowercase letters, digits, or hyphens. It must start with a letter.
       Trailing hyphens are prohibited.  Example: <code>tokyo-rain-123</code>
       Read-only after creation.
     projectNumber: The number uniquely identifying the project.  Example:
-      <code>415104041262</code>  Read-only.
+      <code>415104041262</code> Read-only.
   """
 
   class LifecycleStateValueValuesEnum(_messages.Enum):
@@ -604,8 +602,7 @@ class Project(_messages.Message):
     expression (\[a-z\](\[-a-z0-9\]*\[a-z0-9\])?)?.  No more than 256 labels
     can be associated with a given resource.  Clients should store labels in a
     representation such as JSON that does not depend on specific characters
-    being disallowed.  Example: <code>"environment" : "dev"</code>  Read-
-    write.
+    being disallowed.  Example: <code>"environment" : "dev"</code> Read-write.
 
     Messages:
       AdditionalProperty: An additional property for a LabelsValue object.

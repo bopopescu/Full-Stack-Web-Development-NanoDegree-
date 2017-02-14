@@ -67,18 +67,21 @@ Typical resource usage:
     Process(key, args, operator, operand)
 """
 
+import copy
 import re
 
 from googlecloudsdk.core.resource import resource_exceptions
 from googlecloudsdk.core.resource import resource_projection_spec
 from googlecloudsdk.core.resource import resource_property
 from googlecloudsdk.core.resource import resource_transform
-from googlecloudsdk.third_party.py27 import py27_copy as copy
 
 
-# Reserved operator characters. Resource keys cannot contain unquoted operator
-# characters. This prevents key/operator clashes in expressions.
-_RESERVED_OPERATOR_CHARS = '[].(){},:=!<>+*/%&|^~@#;?'
+# Resource keys cannot contain unquoted operator characters.
+OPERATOR_CHARS = ':=!<>~()'
+
+# Reserved operator characters. Resource keys cannot contain unquoted reverved
+# operator characters. This prevents key/operator clashes in expressions.
+_RESERVED_OPERATOR_CHARS = OPERATOR_CHARS + '[].{},+*/%&|^@#;?'
 
 
 class _TransformCall(object):
@@ -93,18 +96,16 @@ class _TransformCall(object):
       up to map_transform times. map_transform>1 handles nested lists.
     args: List of function call actual arg strings.
     kwargs: List of function call actual keyword arg strings.
-    restriction: Call is a global restriction that does not have an obj arg.
   """
 
   def __init__(self, name, func, active=0, map_transform=0, args=None,
-               kwargs=None, restriction=False):
+               kwargs=None):
     self.name = name
     self.func = func
     self.active = active
     self.map_transform = map_transform
     self.args = args or []
     self.kwargs = kwargs or {}
-    self.restriction = restriction
 
   def __str__(self):
     args = ['<projecton>' if isinstance(
@@ -148,6 +149,11 @@ class _Transform(object):
     """The if() transform conditional expression string."""
     return self._conditional
 
+  @property
+  def name(self):
+    """The name of the last transform."""
+    return self._transforms[-1].name if self._transforms else ''
+
   def IsActive(self, active):
     """Returns True if the Transform active level is None or active."""
     return self._transforms and self.active in (None, active)
@@ -156,17 +162,9 @@ class _Transform(object):
     """Adds a transform to the list."""
     self._transforms.append(transform)
 
-  def Name(self):
-    """Returns the name of the last transform."""
-    return self._transforms[-1].name if self._transforms else ''
-
   def SetConditional(self, expr):
     """Sets the conditional expression string."""
     self._conditional = expr
-
-  def SetRestriction(self):
-    """Sets the restriction attribute of the first transform."""
-    self._transforms[0].restriction = True
 
   def Evaluate(self, obj):
     """Apply the list of transforms to obj and return the transformed value."""
@@ -190,14 +188,11 @@ class _Transform(object):
         for item in items:
           obj.append(transform.func(item, *transform.args, **transform.kwargs))
       elif obj or not transform.map_transform:
-        if transform.restriction:
-          obj = transform.func(*transform.args, **transform.kwargs)
-        else:
-          obj = transform.func(obj, *transform.args, **transform.kwargs)
+        obj = transform.func(obj, *transform.args, **transform.kwargs)
     return obj
 
 
-def MakeTransform(func_name, func, args=None, kwargs=None, restriction=False):
+def MakeTransform(func_name, func, args=None, kwargs=None):
   """Returns a transform call object for func(*args, **kwargs).
 
   Args:
@@ -205,14 +200,12 @@ def MakeTransform(func_name, func, args=None, kwargs=None, restriction=False):
     func: The function object.
     args: The actual call args.
     kwargs: The actual call kwargs.
-    restriction: Call is a global restriction that does not have an obj arg.
 
   Returns:
     A transform call object for func(obj, *args, **kwargs).
   """
   calls = _Transform()
-  calls.Add(_TransformCall(func_name, func, args=args, kwargs=kwargs,
-                           restriction=restriction))
+  calls.Add(_TransformCall(func_name, func, args=args, kwargs=kwargs))
   return calls
 
 
@@ -536,7 +529,7 @@ class Lexer(object):
       ['abc', 'def', 123, 'ghi', None, 'jkl']
 
     Raises:
-      ExpressionSyntaxError: The expression has a syntax error.
+      ExpressionKeyError: The expression has a key syntax error.
 
     Returns:
       The parsed key which is a list of string, int and/or None elements.
@@ -553,9 +546,11 @@ class Lexer(object):
           key.append(name)
       elif not self.IsCharacter('[', peek=True):
         # A single . is a valid key that names the top level resource.
-        if (not key and self.IsCharacter('.') and (
-            self.EndOfInput() or self.IsCharacter(
-                _RESERVED_OPERATOR_CHARS, peek=True, eoi_ok=True))):
+        if (not key and
+            self.IsCharacter('.') and
+            not self.IsCharacter('.', peek=True, eoi_ok=True) and (
+                self.EndOfInput() or self.IsCharacter(
+                    _RESERVED_OPERATOR_CHARS, peek=True, eoi_ok=True))):
           break
         raise resource_exceptions.ExpressionSyntaxError(
             'Non-empty key name expected [{0}].'.format(self.Annotate(here)))
@@ -577,8 +572,93 @@ class Lexer(object):
             'Non-empty key name expected [{0}].'.format(self.Annotate()))
     return key
 
-  def _ParseTransform(self, func_name, active=0, map_transform=None,
-                      restriction=False):
+  def _ParseSynthesize(self, args):
+    """Parses the synthesize() transform args and returns a new transform.
+
+    The args are a list of tuples. Each tuple is a schema that defines the
+    synthesis of one resource list item. Each schema item is an attribute
+    that defines the synthesis of one synthesized_resource attribute from
+    an original_resource attribute.
+
+    There are three kinds of attributes:
+
+      name:literal
+        The value for the name attribute in the synthesized resource is the
+        literal value.
+      name=key
+        The value for the name attribute in the synthesized_resource is the
+        value of key in the original_resource.
+      key:
+        All the attributes of the value of key in the original_resource are
+        added to the attributes in the synthesized_resource.
+
+    Args:
+      args: The original synthesize transform args.
+
+    Returns:
+      A synthesize transform function that uses the schema from the parsed
+      args.
+
+    Example:
+      This returns a list of two resource items:
+        synthesize((name:up, upInfo), (name:down, downInfo))
+      If upInfo and downInfo serialize to
+        {"foo": 1, "bar": "yes"}
+      and
+        {"foo": 0, "bar": "no"}
+      then the synthesized resource list is
+        [{"name": "up", "foo": 1, "bar": "yes"},
+        {"name": "down", "foo": 0, "bar": "no"}]
+      which could be displayed by a nested table using
+        synthesize(...):format="table(name, foo, bar)"
+    """
+    schemas = []
+    for arg in args:
+      lex = Lexer(arg)
+      if not lex.IsCharacter('('):
+        raise resource_exceptions.ExpressionSyntaxError(
+            '(...) args expected in synthesizer() transform')
+      schema = []
+      for attr in lex.Args():
+        if ':' in attr:
+          name, literal = attr.split(':', 1)
+          key = None
+        elif '=' in attr:
+          name, value = attr.split('=', 1)
+          key = Lexer(value).Key()
+          literal = None
+        else:
+          key = Lexer(attr).Key()
+          name = None
+          literal = None
+        schema.append((name, key, literal))
+      schemas.append(schema)
+
+    def _Synthesize(r):
+      """Synthesize a new resource list from the original resource r.
+
+      Args:
+        r: The original resource.
+
+      Returns:
+        The synthesized resource list.
+      """
+      synthesized_resource_list = []
+      for schema in schemas:
+        synthesized_resource = {}
+        for attr in schema:
+          name, key, literal = attr
+          value = resource_property.Get(r, key, None) if key else literal
+          if name:
+            synthesized_resource[name] = value
+          elif isinstance(value, dict):
+            synthesized_resource.update(value)
+        synthesized_resource_list.append(synthesized_resource)
+      return synthesized_resource_list
+
+    return _Synthesize
+
+  def _ParseTransform(self, func_name, active=0, map_transform=None):
     """Parses a transform function call.
 
     The cursor is positioned at the '(' after func_name.
@@ -588,8 +668,6 @@ class Lexer(object):
       active: The transform active level or None if always active.
       map_transform: Apply the transform to each resource list item this many
         times.
-      restriction: Transform is a global restriction that does not have an obj
-        arg.
 
     Returns:
       A _TransformCall object. The caller appends these to a list that is used
@@ -622,10 +700,9 @@ class Lexer(object):
       # No kwargs.
       args += self.Args()
     return _TransformCall(func_name, func, active=active,
-                          map_transform=map_transform, args=args,
-                          kwargs=kwargs, restriction=restriction)
+                          map_transform=map_transform, args=args, kwargs=kwargs)
 
-  def Transform(self, func_name, active=0, restriction=False):
+  def Transform(self, func_name, active=0):
     """Parses one or more transform calls and returns a _Transform call object.
 
     The cursor is positioned at the '(' just after the transform name.
@@ -633,8 +710,6 @@ class Lexer(object):
     Args:
       func_name: The name of the first transform function.
       active: The transform active level, None for always active.
-      restriction: Transform is a global restriction that does not have an obj
-        arg.
 
     Returns:
       The _Transform object containing the ordered list of transform calls.
@@ -644,9 +719,7 @@ class Lexer(object):
     map_transform = 0
     while True:
       transform = self._ParseTransform(func_name, active=active,
-                                       map_transform=map_transform,
-                                       restriction=restriction)
-      restriction = False
+                                       map_transform=map_transform)
       if transform.func == resource_transform.TransformAlways:
         active = None  # Always active.
         func_name = None
@@ -659,6 +732,11 @@ class Lexer(object):
               'Conditional filter expression expected [{0}].'.format(
                   self.Annotate(here)))
         calls.SetConditional(transform.args[0])
+      elif transform.func == resource_transform.TransformSynthesize:
+        transform.func = self._ParseSynthesize(transform.args)
+        transform.args = []
+        transform.kwargs = {}
+        calls.Add(transform)
       else:
         # always() applies to all transforms for key.
         # map() applies to the next transform.
@@ -680,10 +758,35 @@ class Lexer(object):
     return calls
 
 
-def GetKeyName(key):
+def ParseKey(name):
+  """Returns a parsed key for the dotted resource name string.
+
+  This is an encapsulation of Lexer.Key(). That docstring has the input/output
+  details for this function.
+
+  Args:
+    name: A resource name string that may contain dotted components and
+      multi-value indices.
+
+  Raises:
+    ExpressionSyntaxError: If there are unexpected tokens after the key name.
+
+  Returns:
+    A parsed key for he dotted resource name string.
+  """
+  lex = Lexer(name)
+  key = lex.Key()
+  if not lex.EndOfInput():
+    raise resource_exceptions.ExpressionSyntaxError(
+        'Unexpected tokens [{0}] in key.'.format(lex.Annotate()))
+  return key
+
+
+def GetKeyName(key, quote=True):
   """Returns the string representation for a parsed key.
 
-  This is the inverse of Lex.Key().
+  This is the inverse of Lexer.Key(). That docstring has the input/output
+  details for this function.
 
   Args:
     key: A parsed key, which is an ordered list of key names/indices. Each
@@ -696,6 +799,7 @@ def GetKeyName(key):
           value None.
         None - A list slice. Selects all members of a list or dict like object.
           A slice of an empty dict or list is an empty dict or list.
+    quote: "..." the key name if it contains non-alphanum characters.
 
   Returns:
     The string representation of the parsed key.
@@ -712,7 +816,7 @@ def GetKeyName(key):
       if parts:
         parts[-1] += part
         continue
-    elif re.search(r'\W', part):
+    elif quote and re.search(r'\W', part):
       part = part.replace('\\', '\\\\')
       part = part.replace('"', '\\"')
       part = u'"{part}"'.format(part=part)

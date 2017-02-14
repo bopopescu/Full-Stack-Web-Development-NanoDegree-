@@ -51,7 +51,8 @@ def _GetErrorMessage(error):
   return content_obj.get('error', {}).get('message', '')
 
 
-def ProcessEndpointsService(service, project, client=None, messages=None):
+def ProcessEndpointsService(service, source_dir, project, client=None,
+                            messages=None):
   """Pushes service configs to the Endpoints handler.
 
   First, this method checks each service in the list of services to see
@@ -59,6 +60,7 @@ def ProcessEndpointsService(service, project, client=None, messages=None):
 
   Args:
     service: ServiceYamlInfo, The service being deployed.
+    source_dir: str, path to the service's source directory
     project: The name of the GCP project.
     client: The Service Management API client to use.
     messages: The Service Management API messages module to use.
@@ -81,8 +83,8 @@ def ProcessEndpointsService(service, project, client=None, messages=None):
       if os.path.isabs(swagger_file):
         swagger_abs_path = swagger_file
       else:
-        swagger_abs_path = os.path.normpath(os.path.join(
-            os.path.dirname(service.file), swagger_file))
+        swagger_abs_path = os.path.normpath(
+            os.path.join(source_dir, swagger_file))
       return PushServiceConfig(swagger_abs_path, project, client, messages)
 
   return None
@@ -141,11 +143,13 @@ def PushServiceConfig(swagger_file, project, client, messages):
   services_util.CreateServiceIfNew(service_name, project)
 
   # Push the service configuration.
-  config_id = services_util.PushOpenApiServiceConfig(
+  push_config_result = services_util.PushOpenApiServiceConfig(
       service_name,
       swagger_file_contents,
       os.path.basename(swagger_file),
       async=False)
+  config_id = services_util.GetServiceConfigIdFromSubmitConfigSourceResponse(
+      push_config_result)
 
   if config_id and service_name:
     # Print this to screen and to the log because the output is needed by the

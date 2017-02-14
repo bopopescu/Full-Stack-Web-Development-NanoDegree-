@@ -34,8 +34,10 @@ class ComputeBeta(base_api.BaseApiClient):
         credentials_args=credentials_args,
         default_global_params=default_global_params,
         additional_http_headers=additional_http_headers)
+    self.acceleratorTypes = self.AcceleratorTypesService(self)
     self.addresses = self.AddressesService(self)
     self.autoscalers = self.AutoscalersService(self)
+    self.backendBuckets = self.BackendBucketsService(self)
     self.backendServices = self.BackendServicesService(self)
     self.diskTypes = self.DiskTypesService(self)
     self.disks = self.DisksService(self)
@@ -77,6 +79,94 @@ class ComputeBeta(base_api.BaseApiClient):
     self.vpnTunnels = self.VpnTunnelsService(self)
     self.zoneOperations = self.ZoneOperationsService(self)
     self.zones = self.ZonesService(self)
+
+  class AcceleratorTypesService(base_api.BaseApiService):
+    """Service class for the acceleratorTypes resource."""
+
+    _NAME = u'acceleratorTypes'
+
+    def __init__(self, client):
+      super(ComputeBeta.AcceleratorTypesService, self).__init__(client)
+      self._upload_configs = {
+          }
+
+    def AggregatedList(self, request, global_params=None):
+      """Retrieves an aggregated list of accelerator types.
+
+      Args:
+        request: (ComputeAcceleratorTypesAggregatedListRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (AcceleratorTypeAggregatedList) The response message.
+      """
+      config = self.GetMethodConfig('AggregatedList')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    AggregatedList.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'GET',
+        method_id=u'compute.acceleratorTypes.aggregatedList',
+        ordered_params=[u'project'],
+        path_params=[u'project'],
+        query_params=[u'filter', u'maxResults', u'orderBy', u'pageToken'],
+        relative_path=u'projects/{project}/aggregated/acceleratorTypes',
+        request_field='',
+        request_type_name=u'ComputeAcceleratorTypesAggregatedListRequest',
+        response_type_name=u'AcceleratorTypeAggregatedList',
+        supports_download=False,
+    )
+
+    def Get(self, request, global_params=None):
+      """Returns the specified accelerator type. Get a list of available accelerator types by making a list() request.
+
+      Args:
+        request: (ComputeAcceleratorTypesGetRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (AcceleratorType) The response message.
+      """
+      config = self.GetMethodConfig('Get')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    Get.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'GET',
+        method_id=u'compute.acceleratorTypes.get',
+        ordered_params=[u'project', u'zone', u'acceleratorType'],
+        path_params=[u'acceleratorType', u'project', u'zone'],
+        query_params=[],
+        relative_path=u'projects/{project}/zones/{zone}/acceleratorTypes/{acceleratorType}',
+        request_field='',
+        request_type_name=u'ComputeAcceleratorTypesGetRequest',
+        response_type_name=u'AcceleratorType',
+        supports_download=False,
+    )
+
+    def List(self, request, global_params=None):
+      """Retrieves a list of accelerator types available to the specified project.
+
+      Args:
+        request: (ComputeAcceleratorTypesListRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (AcceleratorTypeList) The response message.
+      """
+      config = self.GetMethodConfig('List')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    List.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'GET',
+        method_id=u'compute.acceleratorTypes.list',
+        ordered_params=[u'project', u'zone'],
+        path_params=[u'project', u'zone'],
+        query_params=[u'filter', u'maxResults', u'orderBy', u'pageToken'],
+        relative_path=u'projects/{project}/zones/{zone}/acceleratorTypes',
+        request_field='',
+        request_type_name=u'ComputeAcceleratorTypesListRequest',
+        response_type_name=u'AcceleratorTypeList',
+        supports_download=False,
+    )
 
   class AddressesService(base_api.BaseApiService):
     """Service class for the addresses resource."""
@@ -458,6 +548,172 @@ class ComputeBeta(base_api.BaseApiClient):
         relative_path=u'projects/{project}/zones/{zone}/autoscalers',
         request_field=u'autoscalerResource',
         request_type_name=u'ComputeAutoscalersUpdateRequest',
+        response_type_name=u'Operation',
+        supports_download=False,
+    )
+
+  class BackendBucketsService(base_api.BaseApiService):
+    """Service class for the backendBuckets resource."""
+
+    _NAME = u'backendBuckets'
+
+    def __init__(self, client):
+      super(ComputeBeta.BackendBucketsService, self).__init__(client)
+      self._upload_configs = {
+          }
+
+    def Delete(self, request, global_params=None):
+      """Deletes the specified BackendBucket resource.
+
+      Args:
+        request: (ComputeBackendBucketsDeleteRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (Operation) The response message.
+      """
+      config = self.GetMethodConfig('Delete')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    Delete.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'DELETE',
+        method_id=u'compute.backendBuckets.delete',
+        ordered_params=[u'project', u'backendBucket'],
+        path_params=[u'backendBucket', u'project'],
+        query_params=[],
+        relative_path=u'projects/{project}/global/backendBuckets/{backendBucket}',
+        request_field='',
+        request_type_name=u'ComputeBackendBucketsDeleteRequest',
+        response_type_name=u'Operation',
+        supports_download=False,
+    )
+
+    def Get(self, request, global_params=None):
+      """Returns the specified BackendBucket resource. Get a list of available backend buckets by making a list() request.
+
+      Args:
+        request: (ComputeBackendBucketsGetRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (BackendBucket) The response message.
+      """
+      config = self.GetMethodConfig('Get')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    Get.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'GET',
+        method_id=u'compute.backendBuckets.get',
+        ordered_params=[u'project', u'backendBucket'],
+        path_params=[u'backendBucket', u'project'],
+        query_params=[],
+        relative_path=u'projects/{project}/global/backendBuckets/{backendBucket}',
+        request_field='',
+        request_type_name=u'ComputeBackendBucketsGetRequest',
+        response_type_name=u'BackendBucket',
+        supports_download=False,
+    )
+
+    def Insert(self, request, global_params=None):
+      """Creates a BackendBucket resource in the specified project using the data included in the request.
+
+      Args:
+        request: (ComputeBackendBucketsInsertRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (Operation) The response message.
+      """
+      config = self.GetMethodConfig('Insert')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    Insert.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'POST',
+        method_id=u'compute.backendBuckets.insert',
+        ordered_params=[u'project'],
+        path_params=[u'project'],
+        query_params=[],
+        relative_path=u'projects/{project}/global/backendBuckets',
+        request_field=u'backendBucket',
+        request_type_name=u'ComputeBackendBucketsInsertRequest',
+        response_type_name=u'Operation',
+        supports_download=False,
+    )
+
+    def List(self, request, global_params=None):
+      """Retrieves the list of BackendBucket resources available to the specified project.
+
+      Args:
+        request: (ComputeBackendBucketsListRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (BackendBucketList) The response message.
+      """
+      config = self.GetMethodConfig('List')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    List.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'GET',
+        method_id=u'compute.backendBuckets.list',
+        ordered_params=[u'project'],
+        path_params=[u'project'],
+        query_params=[u'filter', u'maxResults', u'orderBy', u'pageToken'],
+        relative_path=u'projects/{project}/global/backendBuckets',
+        request_field='',
+        request_type_name=u'ComputeBackendBucketsListRequest',
+        response_type_name=u'BackendBucketList',
+        supports_download=False,
+    )
+
+    def Patch(self, request, global_params=None):
+      """Updates the specified BackendBucket resource with the data included in the request. This method supports patch semantics.
+
+      Args:
+        request: (ComputeBackendBucketsPatchRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (Operation) The response message.
+      """
+      config = self.GetMethodConfig('Patch')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    Patch.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'PATCH',
+        method_id=u'compute.backendBuckets.patch',
+        ordered_params=[u'project', u'backendBucket'],
+        path_params=[u'backendBucket', u'project'],
+        query_params=[],
+        relative_path=u'projects/{project}/global/backendBuckets/{backendBucket}',
+        request_field=u'backendBucketResource',
+        request_type_name=u'ComputeBackendBucketsPatchRequest',
+        response_type_name=u'Operation',
+        supports_download=False,
+    )
+
+    def Update(self, request, global_params=None):
+      """Updates the specified BackendBucket resource with the data included in the request.
+
+      Args:
+        request: (ComputeBackendBucketsUpdateRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (Operation) The response message.
+      """
+      config = self.GetMethodConfig('Update')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    Update.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'PUT',
+        method_id=u'compute.backendBuckets.update',
+        ordered_params=[u'project', u'backendBucket'],
+        path_params=[u'backendBucket', u'project'],
+        query_params=[],
+        relative_path=u'projects/{project}/global/backendBuckets/{backendBucket}',
+        request_field=u'backendBucketResource',
+        request_type_name=u'ComputeBackendBucketsUpdateRequest',
         response_type_name=u'Operation',
         supports_download=False,
     )
@@ -848,7 +1104,7 @@ class ComputeBeta(base_api.BaseApiClient):
         method_id=u'compute.disks.createSnapshot',
         ordered_params=[u'project', u'zone', u'disk'],
         path_params=[u'disk', u'project', u'zone'],
-        query_params=[],
+        query_params=[u'guestFlush'],
         relative_path=u'projects/{project}/zones/{zone}/disks/{disk}/createSnapshot',
         request_field=u'snapshot',
         request_type_name=u'ComputeDisksCreateSnapshotRequest',
@@ -2848,11 +3104,37 @@ If an empty request body is given, clears the deprecation status instead.
         method_id=u'compute.instanceGroupManagers.listManagedInstances',
         ordered_params=[u'project', u'zone', u'instanceGroupManager'],
         path_params=[u'instanceGroupManager', u'project', u'zone'],
-        query_params=[],
+        query_params=[u'filter', u'maxResults', u'order_by', u'pageToken'],
         relative_path=u'projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/listManagedInstances',
         request_field='',
         request_type_name=u'ComputeInstanceGroupManagersListManagedInstancesRequest',
         response_type_name=u'InstanceGroupManagersListManagedInstancesResponse',
+        supports_download=False,
+    )
+
+    def Patch(self, request, global_params=None):
+      """Updates a managed instance group using the information that you specify in the request. The field statefulPolicy is updated using PATCH semantics. This operation is marked as DONE when the group is updated even if the instances in the group have not yet been updated. You must separately verify the status of the individual instances with the listmanagedinstances method. This method supports patch semantics.
+
+      Args:
+        request: (ComputeInstanceGroupManagersPatchRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (Operation) The response message.
+      """
+      config = self.GetMethodConfig('Patch')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    Patch.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'PATCH',
+        method_id=u'compute.instanceGroupManagers.patch',
+        ordered_params=[u'project', u'zone', u'instanceGroupManager'],
+        path_params=[u'instanceGroupManager', u'project', u'zone'],
+        query_params=[],
+        relative_path=u'projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}',
+        request_field=u'instanceGroupManagerResource',
+        request_type_name=u'ComputeInstanceGroupManagersPatchRequest',
+        response_type_name=u'Operation',
         supports_download=False,
     )
 
@@ -3037,6 +3319,32 @@ If you increase the size of the instance group, the group creates new instances 
         request_field=u'testPermissionsRequest',
         request_type_name=u'ComputeInstanceGroupManagersTestIamPermissionsRequest',
         response_type_name=u'TestPermissionsResponse',
+        supports_download=False,
+    )
+
+    def Update(self, request, global_params=None):
+      """Updates a managed instance group using the information that you specify in the request. The field statefulPolicy is updated using PATCH semantics. This operation is marked as DONE when the group is updated even if the instances in the group have not yet been updated. You must separately verify the status of the individual instances with the listmanagedinstances method.
+
+      Args:
+        request: (ComputeInstanceGroupManagersUpdateRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (Operation) The response message.
+      """
+      config = self.GetMethodConfig('Update')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    Update.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'PUT',
+        method_id=u'compute.instanceGroupManagers.update',
+        ordered_params=[u'project', u'zone', u'instanceGroupManager'],
+        path_params=[u'instanceGroupManager', u'project', u'zone'],
+        query_params=[],
+        relative_path=u'projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}',
+        request_field=u'instanceGroupManagerResource',
+        request_type_name=u'ComputeInstanceGroupManagersUpdateRequest',
+        response_type_name=u'Operation',
         supports_download=False,
     )
 
@@ -3798,6 +4106,32 @@ If you increase the size of the instance group, the group creates new instances 
         supports_download=False,
     )
 
+    def SetMachineResources(self, request, global_params=None):
+      """Changes the number and/or type of accelerator for a stopped instance to the values specified in the request.
+
+      Args:
+        request: (ComputeInstancesSetMachineResourcesRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (Operation) The response message.
+      """
+      config = self.GetMethodConfig('SetMachineResources')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    SetMachineResources.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'POST',
+        method_id=u'compute.instances.setMachineResources',
+        ordered_params=[u'project', u'zone', u'instance'],
+        path_params=[u'instance', u'project', u'zone'],
+        query_params=[],
+        relative_path=u'projects/{project}/zones/{zone}/instances/{instance}/setMachineResources',
+        request_field=u'instancesSetMachineResourcesRequest',
+        request_type_name=u'ComputeInstancesSetMachineResourcesRequest',
+        response_type_name=u'Operation',
+        supports_download=False,
+    )
+
     def SetMachineType(self, request, global_params=None):
       """Changes the machine type for a stopped instance to the machine type specified in the request.
 
@@ -3872,6 +4206,32 @@ If you increase the size of the instance group, the group creates new instances 
         relative_path=u'projects/{project}/zones/{zone}/instances/{instance}/setScheduling',
         request_field=u'scheduling',
         request_type_name=u'ComputeInstancesSetSchedulingRequest',
+        response_type_name=u'Operation',
+        supports_download=False,
+    )
+
+    def SetServiceAccount(self, request, global_params=None):
+      """Sets the service account on the instance.
+
+      Args:
+        request: (ComputeInstancesSetServiceAccountRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (Operation) The response message.
+      """
+      config = self.GetMethodConfig('SetServiceAccount')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    SetServiceAccount.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'POST',
+        method_id=u'compute.instances.setServiceAccount',
+        ordered_params=[u'project', u'zone', u'instance'],
+        path_params=[u'instance', u'project', u'zone'],
+        query_params=[],
+        relative_path=u'projects/{project}/zones/{zone}/instances/{instance}/setServiceAccount',
+        request_field=u'instancesSetServiceAccountRequest',
+        request_type_name=u'ComputeInstancesSetServiceAccountRequest',
         response_type_name=u'Operation',
         supports_download=False,
     )
@@ -4329,6 +4689,58 @@ If you increase the size of the instance group, the group creates new instances 
         request_field='',
         request_type_name=u'ComputeProjectsGetRequest',
         response_type_name=u'Project',
+        supports_download=False,
+    )
+
+    def GetXpnHost(self, request, global_params=None):
+      """Get the XPN host project that this project links to. May be empty if no link exists.
+
+      Args:
+        request: (ComputeProjectsGetXpnHostRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (Project) The response message.
+      """
+      config = self.GetMethodConfig('GetXpnHost')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    GetXpnHost.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'GET',
+        method_id=u'compute.projects.getXpnHost',
+        ordered_params=[u'project'],
+        path_params=[u'project'],
+        query_params=[],
+        relative_path=u'projects/{project}/getXpnHost',
+        request_field='',
+        request_type_name=u'ComputeProjectsGetXpnHostRequest',
+        response_type_name=u'Project',
+        supports_download=False,
+    )
+
+    def ListXpnHosts(self, request, global_params=None):
+      """List all XPN host projects visible to the user in an organization.
+
+      Args:
+        request: (ComputeProjectsListXpnHostsRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (XpnHostList) The response message.
+      """
+      config = self.GetMethodConfig('ListXpnHosts')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    ListXpnHosts.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'POST',
+        method_id=u'compute.projects.listXpnHosts',
+        ordered_params=[u'project'],
+        path_params=[u'project'],
+        query_params=[u'filter', u'maxResults', u'order_by', u'pageToken'],
+        relative_path=u'projects/{project}/listXpnHosts',
+        request_field=u'projectsListXpnHostsRequest',
+        request_type_name=u'ComputeProjectsListXpnHostsRequest',
+        response_type_name=u'XpnHostList',
         supports_download=False,
     )
 
@@ -5030,7 +5442,7 @@ If you increase the size of the instance group, the group creates new instances 
         method_id=u'compute.regionInstanceGroupManagers.listManagedInstances',
         ordered_params=[u'project', u'region', u'instanceGroupManager'],
         path_params=[u'instanceGroupManager', u'project', u'region'],
-        query_params=[],
+        query_params=[u'filter', u'maxResults', u'order_by', u'pageToken'],
         relative_path=u'projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/listManagedInstances',
         request_field='',
         request_type_name=u'ComputeRegionInstanceGroupManagersListManagedInstancesRequest',
@@ -6342,6 +6754,32 @@ For more information, see Deleting snaphots.
         supports_download=False,
     )
 
+    def GetIamPolicy(self, request, global_params=None):
+      """Gets the access control policy for a resource. May be empty if no such policy or resource exists.
+
+      Args:
+        request: (ComputeSubnetworksGetIamPolicyRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (Policy) The response message.
+      """
+      config = self.GetMethodConfig('GetIamPolicy')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    GetIamPolicy.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'GET',
+        method_id=u'compute.subnetworks.getIamPolicy',
+        ordered_params=[u'project', u'region', u'resource'],
+        path_params=[u'project', u'region', u'resource'],
+        query_params=[],
+        relative_path=u'projects/{project}/regions/{region}/subnetworks/{resource}/getIamPolicy',
+        request_field='',
+        request_type_name=u'ComputeSubnetworksGetIamPolicyRequest',
+        response_type_name=u'Policy',
+        supports_download=False,
+    )
+
     def Insert(self, request, global_params=None):
       """Creates a subnetwork in the specified project using the data included in the request.
 
@@ -6391,6 +6829,32 @@ For more information, see Deleting snaphots.
         request_field='',
         request_type_name=u'ComputeSubnetworksListRequest',
         response_type_name=u'SubnetworkList',
+        supports_download=False,
+    )
+
+    def SetIamPolicy(self, request, global_params=None):
+      """Sets the access control policy on the specified resource. Replaces any existing policy.
+
+      Args:
+        request: (ComputeSubnetworksSetIamPolicyRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (Policy) The response message.
+      """
+      config = self.GetMethodConfig('SetIamPolicy')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    SetIamPolicy.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'POST',
+        method_id=u'compute.subnetworks.setIamPolicy',
+        ordered_params=[u'project', u'region', u'resource'],
+        path_params=[u'project', u'region', u'resource'],
+        query_params=[],
+        relative_path=u'projects/{project}/regions/{region}/subnetworks/{resource}/setIamPolicy',
+        request_field=u'policy',
+        request_type_name=u'ComputeSubnetworksSetIamPolicyRequest',
+        response_type_name=u'Policy',
         supports_download=False,
     )
 

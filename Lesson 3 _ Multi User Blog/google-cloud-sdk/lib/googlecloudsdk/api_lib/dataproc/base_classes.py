@@ -19,14 +19,14 @@ import os
 import urlparse
 
 from apitools.base.py import encoding
-from apitools.base.py import exceptions as apitools_exceptions
 
 from googlecloudsdk.api_lib.dataproc import constants
 from googlecloudsdk.api_lib.dataproc import storage_helpers
 from googlecloudsdk.api_lib.dataproc import util
 from googlecloudsdk.calliope import base
-from googlecloudsdk.calliope import exceptions
+from googlecloudsdk.command_lib.util import labels_util
 from googlecloudsdk.core import log
+from googlecloudsdk.core.util import files
 
 
 class JobSubmitter(base.Command):
@@ -59,14 +59,14 @@ class JobSubmitter(base.Command):
     self.PopulateFilesByType(args)
 
     cluster_ref = util.ParseCluster(args.cluster, self.context)
-    request = cluster_ref.Request()
+    request = messages.DataprocProjectsRegionsClustersGetRequest(
+        projectId=cluster_ref.projectId,
+        region=cluster_ref.region,
+        clusterName=cluster_ref.clusterName)
 
-    try:
-      cluster = client.projects_regions_clusters.Get(request)
-    except apitools_exceptions.HttpError as error:
-      raise exceptions.HttpException(error)
+    cluster = client.projects_regions_clusters.Get(request)
 
-    self._staging_dir = self.GetStagingDir(cluster)
+    self._staging_dir = self.GetStagingDir(cluster, job_ref.jobId)
     self.ValidateAndStageFiles()
 
     job = messages.Job(
@@ -84,10 +84,7 @@ class JobSubmitter(base.Command):
         submitJobRequest=messages.SubmitJobRequest(
             job=job))
 
-    try:
-      job = client.projects_regions_jobs.Submit(request)
-    except apitools_exceptions.HttpError as error:
-      raise exceptions.HttpException(error)
+    job = client.projects_regions_jobs.Submit(request)
 
     log.status.Print('Job [{0}] submitted.'.format(job_id))
 
@@ -115,7 +112,7 @@ class JobSubmitter(base.Command):
       return file_str
 
     if not os.path.exists(file_str):
-      raise exceptions.ToolException('File Not Found: [{0}].'.format(file_str))
+      raise files.Error('File Not Found: [{0}].'.format(file_str))
     basename = os.path.basename(file_str)
     self.files_to_stage.append(file_str)
     staged_file = urlparse.urljoin(self._staging_dir, basename)
@@ -123,14 +120,14 @@ class JobSubmitter(base.Command):
 
   def ValidateAndStageFiles(self):
     """Validate file URIs and upload them if they are local."""
-    for file_type, files in self.files_by_type.iteritems():
+    for file_type, file_or_files in self.files_by_type.iteritems():
       # TODO(user): Validate file suffixes.
-      if not files:
+      if not file_or_files:
         continue
-      elif isinstance(files, str):
-        self.files_by_type[file_type] = self._GetStagedFile(files)
+      elif isinstance(file_or_files, str):
+        self.files_by_type[file_type] = self._GetStagedFile(file_or_files)
       else:
-        staged_files = [self._GetStagedFile(f) for f in files]
+        staged_files = [self._GetStagedFile(f) for f in file_or_files]
         self.files_by_type[file_type] = staged_files
 
     if self.files_to_stage:
@@ -139,12 +136,14 @@ class JobSubmitter(base.Command):
               self.files_to_stage, self._staging_dir))
       storage_helpers.Upload(self.files_to_stage, self._staging_dir)
 
-  def GetStagingDir(self, cluster):
+  def GetStagingDir(self, cluster, job_id):
     """Determine the GCS directory to stage job resources in."""
-    # Get bucket from cluster.
-    bucket = cluster.config.configBucket
-    staging_dir = 'gs://{0}/{1}/{2}/'.format(
-        bucket, constants.GCS_STAGING_PREFIX, cluster.clusterUuid)
+    staging_dir = (
+        'gs://{bucket}/{prefix}/{uuid}/jobs/{job_id}/staging/'.format(
+            bucket=cluster.config.configBucket,
+            prefix=constants.GCS_METADATA_PREFIX,
+            uuid=cluster.clusterUuid,
+            job_id=job_id))
     return staging_dir
 
   def BuildLoggingConfig(self, driver_logging):
@@ -168,3 +167,24 @@ class JobSubmitter(base.Command):
   def PopulateFilesByType(self, args):
     """Take files out of args to allow for them to be staged."""
     pass
+
+
+@base.ReleaseTracks(base.ReleaseTrack.BETA)
+class JobSubmitterBeta(JobSubmitter):
+  """Submit a job to a cluster."""
+
+  @staticmethod
+  def Args(parser):
+    JobSubmitter.Args(parser)
+    labels_util.AddCreateLabelsFlags(parser)
+
+  def ConfigureJob(self, job, args):
+    messages = self.context['dataproc_messages']
+
+    # Parse labels (if present)
+    labels = labels_util.UpdateLabels(
+        None,
+        messages.Job.LabelsValue,
+        labels_util.GetUpdateLabelsDictFromArgs(args),
+        None)
+    job.labels = labels

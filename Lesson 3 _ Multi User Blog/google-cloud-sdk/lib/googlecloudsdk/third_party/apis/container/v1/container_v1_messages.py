@@ -134,6 +134,29 @@ class AuthorizeResponse(_messages.Message):
   status = _messages.MessageField('SubjectAccessReviewStatus', 4)
 
 
+class AutoUpgradeOptions(_messages.Message):
+  """AutoUpgradeOptions defines the set of options for the user to control how
+  the Auto Upgrades will proceed.
+
+  Fields:
+    autoUpgradeStartTime: [Output only] This field is set when upgrades are
+      about to commence with the approximate start time for the upgrades, in
+      [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+    description: [Output only] This field is set when upgrades are about to
+      commence with the description of the upgrade.
+    requestedUpgradeStartTime: User requested start time, in
+      [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  """
+
+  autoUpgradeStartTime = _messages.StringField(1)
+  description = _messages.StringField(2)
+  requestedUpgradeStartTime = _messages.StringField(3)
+
+
+class CancelOperationRequest(_messages.Message):
+  """CancelOperationRequest cancels a single operation."""
+
+
 class Cluster(_messages.Message):
   """A Google Container Engine cluster.
 
@@ -305,10 +328,9 @@ class ClusterUpdate(_messages.Message):
     desiredMasterMachineType: The name of a Google Compute Engine [machine
       type](/compute/docs/machine-types) (e.g. `n1-standard-8`) to change the
       master to.
-    desiredMasterVersion:  Whitelisted and internal users can change the
-      master to any version.  The Kubernetes version to change the master to.
-      The only valid value is the latest supported version. Use "-" to have
-      the server automatically select the latest version.
+    desiredMasterVersion: The Kubernetes version to change the master to. The
+      only valid value is the latest supported version. Use "-" to have the
+      server automatically select the latest version.
     desiredMonitoringService: The monitoring service the cluster should use to
       write metrics. Currently available options:  *
       "monitoring.googleapis.com" - the Google Cloud Monitoring service *
@@ -575,6 +597,48 @@ class ContainerProjectsZonesClustersNodePoolsListRequest(_messages.Message):
   zone = _messages.StringField(3, required=True)
 
 
+class ContainerProjectsZonesClustersNodePoolsRollbackRequest(_messages.Message):
+  """A ContainerProjectsZonesClustersNodePoolsRollbackRequest object.
+
+  Fields:
+    clusterId: The name of the cluster to rollback.
+    nodePoolId: The name of the node pool to rollback.
+    projectId: The Google Developers Console [project ID or project
+      number](https://support.google.com/cloud/answer/6158840).
+    rollbackNodePoolUpgradeRequest: A RollbackNodePoolUpgradeRequest resource
+      to be passed as the request body.
+    zone: The name of the Google Compute Engine
+      [zone](/compute/docs/zones#available) in which the cluster resides.
+  """
+
+  clusterId = _messages.StringField(1, required=True)
+  nodePoolId = _messages.StringField(2, required=True)
+  projectId = _messages.StringField(3, required=True)
+  rollbackNodePoolUpgradeRequest = _messages.MessageField('RollbackNodePoolUpgradeRequest', 4)
+  zone = _messages.StringField(5, required=True)
+
+
+class ContainerProjectsZonesClustersNodePoolsSetManagementRequest(_messages.Message):
+  """A ContainerProjectsZonesClustersNodePoolsSetManagementRequest object.
+
+  Fields:
+    clusterId: The name of the cluster to update.
+    nodePoolId: The name of the node pool to update.
+    projectId: The Google Developers Console [project ID or project
+      number](https://support.google.com/cloud/answer/6158840).
+    setNodePoolManagementRequest: A SetNodePoolManagementRequest resource to
+      be passed as the request body.
+    zone: The name of the Google Compute Engine
+      [zone](/compute/docs/zones#available) in which the cluster resides.
+  """
+
+  clusterId = _messages.StringField(1, required=True)
+  nodePoolId = _messages.StringField(2, required=True)
+  projectId = _messages.StringField(3, required=True)
+  setNodePoolManagementRequest = _messages.MessageField('SetNodePoolManagementRequest', 4)
+  zone = _messages.StringField(5, required=True)
+
+
 class ContainerProjectsZonesClustersUpdateRequest(_messages.Message):
   """A ContainerProjectsZonesClustersUpdateRequest object.
 
@@ -606,6 +670,25 @@ class ContainerProjectsZonesGetServerconfigRequest(_messages.Message):
 
   projectId = _messages.StringField(1, required=True)
   zone = _messages.StringField(2, required=True)
+
+
+class ContainerProjectsZonesOperationsCancelRequest(_messages.Message):
+  """A ContainerProjectsZonesOperationsCancelRequest object.
+
+  Fields:
+    cancelOperationRequest: A CancelOperationRequest resource to be passed as
+      the request body.
+    operationId: The server-assigned `name` of the operation.
+    projectId: The Google Developers Console [project ID or project
+      number](https://support.google.com/cloud/answer/6158840).
+    zone: The name of the Google Compute Engine
+      [zone](/compute/docs/zones#available) in which the operation resides.
+  """
+
+  cancelOperationRequest = _messages.MessageField('CancelOperationRequest', 1)
+  operationId = _messages.StringField(2, required=True)
+  projectId = _messages.StringField(3, required=True)
+  zone = _messages.StringField(4, required=True)
 
 
 class ContainerProjectsZonesOperationsGetRequest(_messages.Message):
@@ -693,6 +776,16 @@ class CreateTokenRequest(_messages.Message):
 
   clusterId = _messages.StringField(1)
   projectNumber = _messages.IntegerField(2)
+
+
+class Empty(_messages.Message):
+  """A generic empty message that you can re-use to avoid defining duplicated
+  empty messages in your APIs. A typical example is to use it as the request
+  or the response type of an API method. For instance:      service Foo {
+  rpc Bar(google.protobuf.Empty) returns (google.protobuf.Empty);     }  The
+  JSON representation for `Empty` is empty JSON object `{}`.
+  """
+
 
 
 class ExtraValue(_messages.Message):
@@ -1073,6 +1166,21 @@ class NodeConfig(_messages.Message):
   tags = _messages.StringField(10, repeated=True)
 
 
+class NodeManagement(_messages.Message):
+  """NodeManagement defines the set of node management services turned on for
+  the node pool.
+
+  Fields:
+    autoRepair: Whether the nodes will be automatically repaired.
+    autoUpgrade: Whether the nodes will be automatically upgraded.
+    upgradeOptions: Specifies the Auto Upgrade knobs for the node pool.
+  """
+
+  autoRepair = _messages.BooleanField(1)
+  autoUpgrade = _messages.BooleanField(2)
+  upgradeOptions = _messages.MessageField('AutoUpgradeOptions', 3)
+
+
 class NodePool(_messages.Message):
   """NodePool contains the name and configuration for a cluster's node pool.
   Node pools are a set of nodes (i.e. VM's), with a common configuration and
@@ -1095,6 +1203,7 @@ class NodePool(_messages.Message):
       You must also have available firewall and routes quota.
     instanceGroupUrls: [Output only] The resource URLs of [instance
       groups](/compute/docs/instance-groups/) associated with this node pool.
+    management: NodeManagement configuration for this NodePool.
     name: The name of the node pool.
     selfLink: [Output only] Server-defined URL for the resource.
     status: [Output only] The status of the nodes in this pool instance.
@@ -1135,11 +1244,12 @@ class NodePool(_messages.Message):
   config = _messages.MessageField('NodeConfig', 2)
   initialNodeCount = _messages.IntegerField(3, variant=_messages.Variant.INT32)
   instanceGroupUrls = _messages.StringField(4, repeated=True)
-  name = _messages.StringField(5)
-  selfLink = _messages.StringField(6)
-  status = _messages.EnumField('StatusValueValuesEnum', 7)
-  statusMessage = _messages.StringField(8)
-  version = _messages.StringField(9)
+  management = _messages.MessageField('NodeManagement', 5)
+  name = _messages.StringField(6)
+  selfLink = _messages.StringField(7)
+  status = _messages.EnumField('StatusValueValuesEnum', 8)
+  statusMessage = _messages.StringField(9)
+  version = _messages.StringField(10)
 
 
 class NodePoolAutoscaling(_messages.Message):
@@ -1219,6 +1329,7 @@ class Operation(_messages.Message):
       UPDATE_CLUSTER: Cluster update.
       CREATE_NODE_POOL: Node pool create.
       DELETE_NODE_POOL: Node pool delete.
+      SET_NODE_POOL_MANAGEMENT: Set node pool management.
     """
     TYPE_UNSPECIFIED = 0
     CREATE_CLUSTER = 1
@@ -1229,6 +1340,7 @@ class Operation(_messages.Message):
     UPDATE_CLUSTER = 6
     CREATE_NODE_POOL = 7
     DELETE_NODE_POOL = 8
+    SET_NODE_POOL_MANAGEMENT = 9
 
   class StatusValueValuesEnum(_messages.Enum):
     """The current status of the operation.
@@ -1238,11 +1350,13 @@ class Operation(_messages.Message):
       PENDING: The operation has been created.
       RUNNING: The operation is currently running.
       DONE: The operation is done, either cancelled or completed.
+      ABORTING: The operation is aborting.
     """
     STATUS_UNSPECIFIED = 0
     PENDING = 1
     RUNNING = 2
     DONE = 3
+    ABORTING = 4
 
   detail = _messages.StringField(1)
   name = _messages.StringField(2)
@@ -1277,6 +1391,14 @@ class ResourceAttributes(_messages.Message):
   version = _messages.StringField(7)
 
 
+class RollbackNodePoolUpgradeRequest(_messages.Message):
+  """RollbackNodePoolUpgradeRequest rollbacks the previously Aborted or Failed
+  NodePool upgrade. This will be an no-op if the last upgrade successfully
+  completed.
+  """
+
+
+
 class ServerConfig(_messages.Message):
   """Container Engine service configuration.
 
@@ -1296,6 +1418,17 @@ class ServerConfig(_messages.Message):
   validImageTypes = _messages.StringField(4, repeated=True)
   validMasterVersions = _messages.StringField(5, repeated=True)
   validNodeVersions = _messages.StringField(6, repeated=True)
+
+
+class SetNodePoolManagementRequest(_messages.Message):
+  """SetNodePoolManagementRequest sets the node management properties of a
+  node pool.
+
+  Fields:
+    management: NodeManagement configuration for the node pool.
+  """
+
+  management = _messages.MessageField('NodeManagement', 1)
 
 
 class SignedUrls(_messages.Message):

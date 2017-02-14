@@ -18,12 +18,19 @@ import textwrap
 
 from apitools.base.py import exceptions
 
-from googlecloudsdk.api_lib.iam import utils
 from googlecloudsdk.command_lib.iam import base_classes
+from googlecloudsdk.command_lib.iam import iam_util
 
 
 class GetIamPolicy(base_classes.BaseIamCommand):
-  """Get the IAM policy for a service account."""
+  """Get the IAM policy for a service account.
+
+  This command gets the IAM policy for a service account. If formatted as
+  JSON, the output can be edited and used as a policy file for
+  set-iam-policy. The output includes an "etag" field identifying the version
+  emitted and allowing detection of concurrent policy updates; see
+  $ gcloud iam service-accounts set-iam-policy for additional details.
+  """
 
   detailed_help = {
       'DESCRIPTION': '{description}',
@@ -36,7 +43,7 @@ class GetIamPolicy(base_classes.BaseIamCommand):
 
   @staticmethod
   def Args(parser):
-    parser.add_argument('account',
+    parser.add_argument('name',
                         metavar='IAM-ACCOUNT',
                         help='The service account whose policy to '
                         'get.')
@@ -45,6 +52,6 @@ class GetIamPolicy(base_classes.BaseIamCommand):
     try:
       return self.iam_client.projects_serviceAccounts.GetIamPolicy(
           self.messages.IamProjectsServiceAccountsGetIamPolicyRequest(
-              resource=utils.EmailToAccountResourceName(args.account)))
+              resource=iam_util.EmailToAccountResourceName(args.name)))
     except exceptions.HttpError as error:
-      raise utils.ConvertToServiceAccountException(error, args.account)
+      raise iam_util.ConvertToServiceAccountException(error, args.name)

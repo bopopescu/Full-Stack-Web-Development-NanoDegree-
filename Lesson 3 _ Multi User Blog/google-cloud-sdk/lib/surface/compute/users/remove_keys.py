@@ -14,14 +14,14 @@
 """Command for removing public keys to users."""
 
 from googlecloudsdk.api_lib.compute import base_classes
-from googlecloudsdk.api_lib.compute import gaia_utils
-from googlecloudsdk.api_lib.compute import user_utils
 from googlecloudsdk.api_lib.compute import utils
+from googlecloudsdk.api_lib.compute.users import client as users_client
 from googlecloudsdk.calliope import arg_parsers
+from googlecloudsdk.command_lib.compute.users import utils as user_utils
+from googlecloudsdk.command_lib.util import gaia
 
 
-class RemoveKeys(base_classes.NoOutputAsyncMutator,
-                 user_utils.UserResourceFetcher):
+class RemoveKeys(base_classes.NoOutputAsyncMutator):
   """Remove a public key from a Google Compute Engine user.
 
   *{command}* removes public keys from a Google Compute Engine user.
@@ -59,7 +59,7 @@ class RemoveKeys(base_classes.NoOutputAsyncMutator,
 
     name = args.name
     if not name:
-      name = gaia_utils.GetDefaultAccountName(self.http)
+      name = gaia.GetDefaultAccountName(self.http)
 
     user_ref = self.clouduseraccounts_resources.Parse(
         name, collection='clouduseraccounts.users')
@@ -67,8 +67,11 @@ class RemoveKeys(base_classes.NoOutputAsyncMutator,
     if args.fingerprints:
       fingerprints = args.fingerprints
     else:
+      fetcher = users_client.UserResourceFetcher(
+          self.clouduseraccounts, self.project, self.http, self.batch_url)
+
       fingerprints = [k.fingerprint for k in
-                      self.LookupUser(user_ref.Name()).publicKeys]
+                      fetcher.LookupUser(user_ref.Name()).publicKeys]
 
     # Generate warning before deleting.
     prompt_list = ['[{0}]'.format(fingerprint) for fingerprint in fingerprints]

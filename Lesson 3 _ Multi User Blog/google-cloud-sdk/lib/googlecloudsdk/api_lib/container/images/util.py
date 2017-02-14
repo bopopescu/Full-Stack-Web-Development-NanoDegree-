@@ -13,12 +13,22 @@
 # limitations under the License.
 """Utilities for the container images commands."""
 
+from apitools.base.py import list_pager
 from containerregistry.client import docker_creds
 from containerregistry.client import docker_name
-from containerregistry.client.v2_2 import docker_image
+# We use distinct versions of the library for v2 and v2.2 because
+# the schema of the JSON data returned is fairly different, and
+# images addressed by digest must be accessed via the API version
+# corresponding to how they are stored.
+from containerregistry.client.v2 import docker_image as v2_image
+from containerregistry.client.v2 import util as v2_util
+from containerregistry.client.v2_2 import docker_image as v2_2_image
+from containerregistry.client.v2_2 import util as v2_2_util
+from googlecloudsdk.api_lib.container.images import container_analysis_data_util
 from googlecloudsdk.core import apis
 from googlecloudsdk.core import exceptions
 from googlecloudsdk.core import http
+from googlecloudsdk.core import resources
 from googlecloudsdk.core.credentials import store as c_store
 from googlecloudsdk.core.docker import constants
 from googlecloudsdk.core.docker import docker
@@ -60,7 +70,10 @@ def ValidateRepositoryPath(repository_path):
         'Image name cannot end with \'/\'. '
         'Remove the trailing \'/\' and try again.')
   try:
-    repository = docker_name.Repository(repository_path)
+    if repository_path in constants.MIRROR_REGISTRIES:
+      repository = docker_name.Registry(repository_path)
+    else:
+      repository = docker_name.Repository(repository_path)
     if repository.registry not in constants.ALL_SUPPORTED_REGISTRIES:
       raise docker.UnsupportedRegistryError(repository_path)
     return repository
@@ -92,6 +105,8 @@ def _TimeCreatedToDateTime(time_created):
 
 def RecoverProjectId(repository):
   """Recovers the project-id from a GCR repository."""
+  if repository.registry in constants.MIRROR_REGISTRIES:
+    return constants.MIRROR_PROJECT
   parts = repository.repository.split('/')
   if '.' not in parts[0]:
     return parts[0]
@@ -109,40 +124,75 @@ def _ResourceUrl(repo, digest):
   return 'https://{repo}@{digest}'.format(repo=str(repo), digest=digest)
 
 
-def FetchOccurrences(repository):
-  """Fetches the occurrences attached to the list of manifests."""
-  project_id = RecoverProjectId(repository)
+def _FullyqualifiedDigest(digest):
+  return 'https://{digest}'.format(digest=digest)
 
-  # Construct a filter of all of the resource urls we are displaying
-  filters = []
 
-  # Retrieve all resource urls prefixed with the image path
-  filters.append('has_prefix(resource_url, "{repo}")'.format(
-      repo=_UnqualifiedResourceUrl(repository)))
-
+def _MakeOccurrenceRequest(project_id, resource_filter, occurrence_filter=None):
+  """Helper function to make Fetch Occurrence Request."""
   client = apis.GetClientInstance('containeranalysis', 'v1alpha1')
   messages = apis.GetMessagesModule('containeranalysis', 'v1alpha1')
-
-  request = messages.ContaineranalysisProjectsOccurrencesListRequest(
-      projectsId=project_id,
-      filter=' OR '.join(filters))
-  response = client.projects_occurrences.List(request)
-
-  occurrences = {}
-  for occ in response.occurrences:
-    if occ.resourceUrl not in occurrences:
-      occurrences[occ.resourceUrl] = []
-    occurrences[occ.resourceUrl].append(occ)
+  if occurrence_filter:
+    resource_filter = '({occurrence_filter}) AND ({resource_filter})'.format(
+        occurrence_filter=occurrence_filter, resource_filter=resource_filter)
+  project_ref = resources.REGISTRY.Parse(
+      project_id, collection='cloudresourcemanager.projects')
+  occurrences = list_pager.YieldFromList(
+      client.projects_occurrences,
+      request=messages.ContaineranalysisProjectsOccurrencesListRequest(
+          parent=project_ref.RelativeName(), filter=resource_filter),
+      field='occurrences',
+      batch_size=1000,
+      batch_size_attribute='pageSize')
   return occurrences
 
 
-def TransformManifests(manifests, repository, show_occurrences=True):
+def FetchOccurrencesForResource(digest, occurrence_filter=None):
+  """Fetches the occurrences attached to this image."""
+  project_id = RecoverProjectId(digest)
+  resource_filter = 'resource_url="{resource_url}"'.format(
+      resource_url=_FullyqualifiedDigest(digest))
+  return _MakeOccurrenceRequest(project_id, resource_filter, occurrence_filter)
+
+
+def TransformContainerAnalysisData(image_name, occurrence_filter=None):
+  """Transforms the occurrence data from Container Analysis API."""
+  occurrences = FetchOccurrencesForResource(image_name, occurrence_filter)
+  analysis_obj = container_analysis_data_util.ContainerAnalysisData(image_name)
+  for occurrence in occurrences:
+    analysis_obj.add_record(occurrence)
+  return analysis_obj
+
+
+def FetchOccurrences(repository, occurrence_filter=None):
+  """Fetches the occurrences attached to the list of manifests."""
+  project_id = RecoverProjectId(repository)
+
+  # Retrieve all resource urls prefixed with the image path
+  resource_filter = 'has_prefix(resource_url, "{repo}")'.format(
+      repo=_UnqualifiedResourceUrl(repository))
+
+  occurrences = _MakeOccurrenceRequest(project_id, resource_filter,
+                                       occurrence_filter)
+  occurrences_by_resources = {}
+  for occ in occurrences:
+    if occ.resourceUrl not in occurrences_by_resources:
+      occurrences_by_resources[occ.resourceUrl] = []
+    occurrences_by_resources[occ.resourceUrl].append(occ)
+  return occurrences_by_resources
+
+
+def TransformManifests(manifests, repository,
+                       show_occurrences=True, occurrence_filter=None):
   """Transforms the manifests returned from the server."""
   if not manifests:
     return []
 
   # Map from resource url to the occurrence.
-  occurrences = FetchOccurrences(repository) if show_occurrences else {}
+  occurrences = {}
+  if show_occurrences:
+    occurrences = FetchOccurrences(
+        repository, occurrence_filter=occurrence_filter)
 
   # Attach each occurrence to the resource to which it applies.
   results = []
@@ -174,9 +224,9 @@ def GetTagNamesForDigest(digest, http_obj):
   """
   repository_path = digest.registry + '/' + digest.repository
   repository = ValidateRepositoryPath(repository_path)
-  with docker_image.FromRegistry(basic_creds=CredentialProvider(),
-                                 name=repository,
-                                 transport=http_obj) as image:
+  with v2_2_image.FromRegistry(basic_creds=CredentialProvider(),
+                               name=repository,
+                               transport=http_obj) as image:
     if digest.digest not in image.manifests():
       return []
     manifest_value = image.manifests().get(digest.digest, {})
@@ -228,6 +278,51 @@ def GetDockerImageFromTagOrDigest(image_name):
   return docker_name.Digest(image_name)
 
 
+def GetDigestFromName(image_name):
+  """Gets a digest object given a repository, tag or digest.
+
+  Args:
+    image_name: A docker image reference, possibly underqualified.
+
+  Returns:
+    a docker_name.Digest object.
+
+  Raises:
+    InvalidImageNameError: If no digest can be resolved.
+  """
+  tag_or_digest = GetDockerImageFromTagOrDigest(image_name)
+  # If we got a digest, then just return it.
+  if isinstance(tag_or_digest, docker_name.Digest):
+    return tag_or_digest
+
+  # If we got a tag, resolve it to a digest.
+  def ResolveV2Tag(tag):
+    with v2_image.FromRegistry(
+        basic_creds=CredentialProvider(), name=tag,
+        transport=http.Http()) as v2_img:
+      if v2_img.exists():
+        return v2_util.Digest(v2_img.manifest())
+      return None
+
+  def ResolveV22Tag(tag):
+    with v2_2_image.FromRegistry(
+        basic_creds=CredentialProvider(), name=tag,
+        transport=http.Http()) as v2_2_img:
+      if v2_2_img.exists():
+        return v2_2_util.Digest(v2_2_img.manifest())
+      return None
+
+  # Resolve v2.2 first because we will exist via a compatibility layer.
+  sha256 = ResolveV22Tag(tag_or_digest) or ResolveV2Tag(tag_or_digest)
+  if not sha256:
+    raise InvalidImageNameError('[{0}] is not a valid name.'.format(image_name))
+
+  return docker_name.Digest('{registry}/{repository}@{sha256}'.format(
+      registry=tag_or_digest.registry,
+      repository=tag_or_digest.repository,
+      sha256=sha256))
+
+
 def GetDockerDigestFromPrefix(digest):
   """Gets a full digest string given a potential prefix.
 
@@ -242,13 +337,13 @@ def GetDockerDigestFromPrefix(digest):
   """
   repository_path, prefix = digest.split('@', 1)
   repository = ValidateRepositoryPath(repository_path)
-  with docker_image.FromRegistry(basic_creds=CredentialProvider(),
-                                 name=repository,
-                                 transport=http.Http()) as image:
+  with v2_2_image.FromRegistry(basic_creds=CredentialProvider(),
+                               name=repository,
+                               transport=http.Http()) as image:
     matches = [d for d in image.manifests() if d.startswith(prefix)]
 
     if len(matches) == 1:
-      return repository_path + '@' +  matches.pop()
+      return repository_path + '@' + matches.pop()
     elif len(matches) > 1:
       raise InvalidImageNameError(
           '{0} is not a unique digest prefix. Options are {1}.]'

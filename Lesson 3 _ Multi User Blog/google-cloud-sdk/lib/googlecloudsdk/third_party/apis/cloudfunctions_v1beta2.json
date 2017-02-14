@@ -3,6 +3,7 @@
   "discoveryVersion": "v1",
   "id": "cloudfunctions:v1beta2",
   "name": "cloudfunctions",
+  "canonicalName": "Cloud Functions",
   "version": "v1beta2",
   "revision": "0",
   "title": "Google Cloud Functions API",
@@ -140,7 +141,7 @@
           "type": "boolean"
         },
         "error": {
-          "description": "The error result of the operation in case of failure.",
+          "description": "The error result of the operation in case of failure or cancellation.",
           "$ref": "Status"
         },
         "response": {
@@ -208,7 +209,11 @@
           "type": "string"
         },
         "gcsUrl": {
-          "description": "GCS URL pointing to the zip archive which contains the function.",
+          "description": "Google Cloud Storage URL pointing to the zip archive which contains the\nfunction.",
+          "type": "string"
+        },
+        "sourceArchiveUrl": {
+          "description": "The URL, starting with gs:\/\/, pointing to the zip archive which contains\nthe function.",
           "type": "string"
         },
         "sourceRepository": {
@@ -227,12 +232,12 @@
           "description": "A https endpoint type of source that can be trigger via URL.",
           "$ref": "HTTPSTrigger"
         },
-        "conditionTrigger": {
+        "eventTrigger": {
           "description": "A source that fires events in response to a condition in another service.",
-          "$ref": "ConditionTrigger"
+          "$ref": "EventTrigger"
         },
         "status": {
-          "description": "[Output only] Status of the function deployment.",
+          "description": "Status of the function deployment. Output only.",
           "enumDescriptions": [
             "Status not specified.",
             "Successfully deployed.",
@@ -250,7 +255,7 @@
           ]
         },
         "latestOperation": {
-          "description": "[Output only] Name of the most recent operation modifying the function. If\nthe function status is DEPLOYING or DELETING, then it points to the active\noperation.",
+          "description": "Name of the most recent operation modifying the function. If\nthe function status is DEPLOYING or DELETING, then it points to the active\noperation. Output only.",
           "type": "string"
         },
         "entryPoint": {
@@ -258,14 +263,23 @@
           "type": "string"
         },
         "timeout": {
-          "description": "The cloud function execution timeout. Execution is considered failed and\ncan be terminated if the function is not completed at the end of the\ntimeout period. Defaults to 60 seconds.",
+          "description": "The function execution timeout. Execution is considered failed and\ncan be terminated if the function is not completed at the end of the\ntimeout period. Defaults to 60 seconds.",
           "type": "string",
           "format": "google-duration"
         },
         "availableMemoryMb": {
-          "description": "The amount of memory in MB available for a function.\nDefaults to 128MB.",
+          "description": "The amount of memory in MB available for a function.\nDefaults to 256MB.",
           "type": "integer",
           "format": "int32"
+        },
+        "serviceAccount": {
+          "description": "The service account of the function. Output only.",
+          "type": "string"
+        },
+        "updateTime": {
+          "description": "[Output only] The last update timestamp of a cloud function.",
+          "type": "string",
+          "format": "google-datetime"
         }
       }
     },
@@ -295,7 +309,7 @@
           "type": "string"
         },
         "deployedRevision": {
-          "description": "[Output only] The id of the revision that was resolved at the moment of\nfunction creation or update. For example when a user deployed from a\nbranch, it will be the revision id of the latest change on this branch at\nthat time. If user deployed from revision then this value will be always\nequal to the revision specified by the user.",
+          "description": "The id of the revision that was resolved at the moment of\nfunction creation or update. For example when a user deployed from a\nbranch, it will be the revision id of the latest change on this branch at\nthat time. If user deployed from revision then this value will be always\nequal to the revision specified by the user. Output only.",
           "type": "string"
         }
       }
@@ -311,13 +325,13 @@
         }
       }
     },
-    "ConditionTrigger": {
-      "id": "ConditionTrigger",
-      "description": "Describes ConditionTrigger, used to request events be sent from another\nservice.",
+    "EventTrigger": {
+      "id": "EventTrigger",
+      "description": "Describes EventTrigger, used to request events be sent from another\nservice.",
       "type": "object",
       "properties": {
-        "action": {
-          "description": "Action names contain the service that is sending an event and the kind of\naction that fired the event. Must be of the form sources\/*\/actions\/*\ne.g. Directly handle a Message published to Google Cloud PubSub\n     sources\/cloud.pubsub\/actions\/publish\n\n     Handle an object changing in Google Cloud Storage\n     sources\/cloud.storage\/actions\/change\n\n     Handle a write to the Firebase Realtime Database\n     sources\/firebase.database\/actions\/write",
+        "eventType": {
+          "description": "event_type names contain the service that is sending an event and the kind\nof event that was fired. Must be of the form providers\/*\/eventTypes\/*\ne.g. Directly handle a Message published to Google Cloud PubSub\n     providers\/cloud.pubsub\/eventTypes\/topic.publish\n\n     Handle an object changing in Google Cloud Storage\n     providers\/cloud.storage\/eventTypes\/object.change\n\n     Handle a write to the Firebase Realtime Database\n     providers\/firebase.database\/eventTypes\/data.write",
           "type": "string"
         },
         "resource": {
@@ -362,7 +376,7 @@
     },
     "ListLocationsResponse": {
       "id": "ListLocationsResponse",
-      "description": "The response message for LocationService.ListLocations.",
+      "description": "The response message for Locations.ListLocations.",
       "type": "object",
       "properties": {
         "locations": {
@@ -400,41 +414,6 @@
         },
         "metadata": {
           "description": "Service-specific metadata. For example the available capacity at the given\nlocation.",
-          "type": "object",
-          "additionalProperties": {
-            "type": "any",
-            "description": "Properties of the object. Contains field @type with type URL."
-          }
-        }
-      }
-    },
-    "OperationMetadata": {
-      "id": "OperationMetadata",
-      "description": "Metadata describing an Operation",
-      "type": "object",
-      "properties": {
-        "target": {
-          "description": "Target of the operation - for example\nprojects\/project-1\/regions\/region-1\/functions\/function-1",
-          "type": "string"
-        },
-        "type": {
-          "description": "Type of operation.",
-          "enumDescriptions": [
-            "Unknown operation type.",
-            "Triggered by CreateFunction call",
-            "Triggered by UpdateFunction call",
-            "Triggered by DeleteFunction call."
-          ],
-          "type": "string",
-          "enum": [
-            "OPERATION_UNSPECIFIED",
-            "CREATE_FUNCTION",
-            "UPDATE_FUNCTION",
-            "DELETE_FUNCTION"
-          ]
-        },
-        "request": {
-          "description": "The original request that started the operation.",
           "type": "object",
           "additionalProperties": {
             "type": "any",
@@ -493,7 +472,7 @@
               "description": "The name of the operation resource.",
               "location": "path",
               "required": true,
-              "pattern": "^operations\/[^\/]*$",
+              "pattern": "^operations\/[^\/]+$",
               "type": "string"
             }
           },
@@ -506,38 +485,6 @@
           "scopes": [
             "https://www.googleapis.com/auth/cloud-platform"
           ]
-        }
-      }
-      ,
-      "resources": {
-        "operations": {
-          "methods": {
-            "get": {
-              "id": "cloudfunctions.operations.operations.get",
-              "path": "v1beta2/operations/{+name}",
-              "flatPath": "v1beta2/operations/operations/{operationsId}",
-              "httpMethod": "GET",
-              "description": "Gets the latest state of a long-running operation.  Clients can use this\nmethod to poll the operation result at intervals as recommended by the API\nservice.",
-              "parameters": {
-                "name": {
-                  "description": "The name of the operation resource.",
-                  "location": "path",
-                  "required": true,
-                  "pattern": "^operations\/[^\/]*$",
-                  "type": "string"
-                }
-              },
-              "parameterOrder": [
-                "name"
-              ],
-              "response": {
-                "$ref": "Operation"
-              },
-              "scopes": [
-                "https://www.googleapis.com/auth/cloud-platform"
-              ]
-            }
-          }
         }
       }
     },
@@ -556,7 +503,7 @@
                   "description": "The resource that owns the locations collection, if applicable.",
                   "location": "path",
                   "required": true,
-                  "pattern": "^projects\/[^\/]*$",
+                  "pattern": "^projects\/[^\/]+$",
                   "type": "string"
                 },
                 "filter": {
@@ -602,11 +549,11 @@
                       "description": "The project and location from which the function should be listed,\nspecified in the format: projects\/*\/locations\/*\nIf you want to list functions in all locations, use '-' in place of a\nlocation.",
                       "location": "path",
                       "required": true,
-                      "pattern": "^projects\/[^\/]*\/locations\/[^\/]*$",
+                      "pattern": "^projects\/[^\/]+\/locations\/[^\/]+$",
                       "type": "string"
                     },
                     "pageSize": {
-                      "description": "Maximum number of functions to return.",
+                      "description": "Maximum number of functions to return per call.",
                       "location": "query",
                       "type": "integer",
                       "format": "int32"
@@ -638,7 +585,7 @@
                       "description": "The name of the function which details should be obtained.",
                       "location": "path",
                       "required": true,
-                      "pattern": "^projects\/[^\/]*\/locations\/[^\/]*\/functions\/[^\/]*$",
+                      "pattern": "^projects\/[^\/]+\/locations\/[^\/]+\/functions\/[^\/]+$",
                       "type": "string"
                     }
                   },
@@ -657,13 +604,13 @@
                   "path": "v1beta2/{+location}/functions",
                   "flatPath": "v1beta2/projects/{projectsId}/locations/{locationsId}/functions",
                   "httpMethod": "POST",
-                  "description": "Creates a new function. If a function with the given name already exists in\nthe specified project, it will return ALREADY_EXISTS error.",
+                  "description": "Creates a new function. If a function with the given name already exists in\nthe specified project, the long running operation will return\nALREADY_EXISTS error.",
                   "parameters": {
                     "location": {
                       "description": "The project and location in which the function should be created, specified\nin the format: projects\/*\/locations\/*",
                       "location": "path",
                       "required": true,
-                      "pattern": "^projects\/[^\/]*\/locations\/[^\/]*$",
+                      "pattern": "^projects\/[^\/]+\/locations\/[^\/]+$",
                       "type": "string"
                     }
                   },
@@ -691,7 +638,7 @@
                       "description": "The name of the function to be updated.",
                       "location": "path",
                       "required": true,
-                      "pattern": "^projects\/[^\/]*\/locations\/[^\/]*\/functions\/[^\/]*$",
+                      "pattern": "^projects\/[^\/]+\/locations\/[^\/]+\/functions\/[^\/]+$",
                       "type": "string"
                     }
                   },
@@ -719,7 +666,7 @@
                       "description": "The name of the function which should be deleted.",
                       "location": "path",
                       "required": true,
-                      "pattern": "^projects\/[^\/]*\/locations\/[^\/]*\/functions\/[^\/]*$",
+                      "pattern": "^projects\/[^\/]+\/locations\/[^\/]+\/functions\/[^\/]+$",
                       "type": "string"
                     }
                   },
@@ -744,7 +691,7 @@
                       "description": "The name of the function to be called.",
                       "location": "path",
                       "required": true,
-                      "pattern": "^projects\/[^\/]*\/locations\/[^\/]*\/functions\/[^\/]*$",
+                      "pattern": "^projects\/[^\/]+\/locations\/[^\/]+\/functions\/[^\/]+$",
                       "type": "string"
                     }
                   },

@@ -13,12 +13,14 @@
 # limitations under the License.
 """Provides common arguments for the ML command surface."""
 import argparse
+import itertools
 import sys
 
 from googlecloudsdk.api_lib.storage import storage_util
 from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
 from googlecloudsdk.core import exceptions
+from googlecloudsdk.core import log
 
 
 class ArgumentError(exceptions.Error):
@@ -46,12 +48,28 @@ START_PORT = base.Argument(
     '--start-port',
     type=int,
     default=27182,
-    help=('Start of the range of ports reserved by the local cluster. '
-          'Ignored if --distributed is not specified'))
+    help='Start of the range of ports reserved by the local cluster.',
+    detailed_help="""\
+Start of the range of ports reserved by the local cluster. This command will use
+a contiguous block of ports equal to parameter-server-count + worker-count + 1.
+
+If --distributed is not specified, this flag is ignored.
+""")
+
+
+OPERATION_NAME = base.Argument('operation', help='Name of the operation.')
 
 
 # TODO(user): move these into a class
-CONFIG = base.Argument('--config', help='Path to yaml configuration file.')
+CONFIG = base.Argument(
+    '--config',
+    help='Path to yaml configuration file.',
+    # TODO(b/33456372): add prediction and training config file examples.
+    detailed_help="""\
+Path to the job configuration file. The file should be a yaml document
+containing a Job resource as defined in the API:
+https://cloud.google.com/ml/reference/rest/v1beta1/projects.jobs
+""")
 JOB_NAME = base.Argument('job', help='Name of the job.')
 MODULE_NAME = base.Argument(
     '--module-name',
@@ -59,26 +77,96 @@ MODULE_NAME = base.Argument(
     help='Name of the module to run')
 PACKAGE_PATH = base.Argument(
     '--package-path',
-    help='Path to a Python package to build')
+    help='Path to a Python package to build',
+    detailed_help="""\
+Path to a Python package to build. This should point to a directory containing
+the Python source for the job. It will be built using setuptools (which must be
+installed) using its *parent* directory as context. If the parent directory
+contains a `setup.py` file, the build will use that; otherwise, it will use a
+simple built-in one.
+""")
 PACKAGES = base.Argument(
     '--packages',
-    nargs='+',
     default=[],
-    help='Path to .tar.gz archives of Python code to be used for training')
-STAGING_BUCKET = base.Argument(
-    '--staging-bucket',
-    help='Bucket in which to stage training archives',
-    type=storage_util.BucketReference.Argument,
-    required=True)
-USER_ARGS = base.Argument(
-    'user_args',
-    nargs=argparse.REMAINDER,
-    help='Additional user arguments to be fowarded to user code')
+    type=arg_parsers.ArgList(),
+    metavar='PACKAGE',
+    help='Path to Python archives used for training',
+    detailed_help="""\
+Path to Python archives used for training. These can be local paths
+(absolute or relative), in which case they will be uploaded to the Cloud
+Storage bucket given by `--staging-bucket`, or Cloud Storage URLs
+(`gs://bucket-name/path/to/package.tar.gz`).
+""")
+
+
+def GetUserArgs(local=False):
+  # TODO(b/31400045): Move the details to detailed_help. Right now if we do that
+  # it clobbers the argparse.REMAINDER help text.
+  if local:
+    help_text = """\
+Additional user arguments to be fowarded to user code. Any relative paths will
+be relative to the *parent* directory of `--package-path`.
+"""
+  else:
+    help_text = 'Additional user arguments to be fowarded to user code'
+  return base.Argument(
+      'user_args',
+      nargs=argparse.REMAINDER,
+      help=help_text)
+
+
 VERSION_NAME = base.Argument('version', help='Name of the model version.')
 VERSION_DATA = base.Argument(
     '--origin',
     required=True,
-    help='Google Cloud Storage location containing the model graph.')
+    help='Location containing the model graph.',
+    detailed_help="""\
+Location of ```model/``` "directory" (as output by
+https://www.tensorflow.org/versions/r0.12/api_docs/python/state_ops.html#Saver).
+
+Can be a Google Cloud Storage (`gs://`) path or local file path (no prefix). In
+the latter case the files will be uploaded to Google Cloud Storage and a
+`--staging-bucket` argument is required.
+""")
+_SCALE_TIER_CHOICES = {
+    'BASIC': ('A single worker instance. This tier is suitable for learning '
+              'how to use Cloud ML, and for experimenting with new models '
+              'using small datasets.'),
+    'STANDARD_1': 'Many workers and a few parameter servers.',
+    'PREMIUM_1': 'A large number of workers with many parameter servers.',
+    'BASIC_GPU': 'A single worker instance with a GPU.',
+    'CUSTOM': """\
+The CUSTOM tier is not a set tier, but rather enables you to use your own
+cluster specification. When you use this tier, set values to configure your
+processing cluster according to these guidelines (using the --config flag):
+
+* You _must_ set `TrainingInput.masterType` to specify the type of machine to
+  use for your master node. This is the only required setting.
+* You _may_ set `TrainingInput.workerCount` to specify the number of workers to
+  use. If you specify one or more workers, you _must_ also set
+  `TrainingInput.workerType` to specify the type of machine to use for your
+  worker nodes.
+* You _may_ set `TrainingInput.parameterServerCount` to specify the number of
+  parameter servers to use. If you specify one or more parameter servers, you
+  _must_ also set `TrainingInput.parameterServerType` to specify the type of
+  machine to use for your parameter servers.  Note that all of your workers must
+  use the same machine type, which can be different from your parameter server
+  type and master type. Your parameter servers must likewise use the same
+  machine type, which can be different from your worker type and master type.\
+"""}
+SCALE_TIER = base.Argument(
+    '--scale-tier',
+    help=('Specifies the machine types, the number of replicas for workers and '
+          'parameter servers.'),
+    choices=_SCALE_TIER_CHOICES,
+    default=None)
+# TODO(b/34626942) : Update runtime_version help string with link to runtime
+# version doc page once it exists.
+RUNTIME_VERSION = base.Argument(
+    '--runtime-version',
+    help=('The Google Cloud ML runtime version for this job. '
+          'Defaults to the latest stable version. For example: "0.11"'))
+
 POLLING_INTERVAL = base.Argument(
     '--polling-interval',
     type=arg_parsers.BoundedInt(1, sys.maxint, unlimited=True),
@@ -90,6 +178,11 @@ ALLOW_MULTILINE_LOGS = base.Argument(
     '--allow-multiline-logs',
     action='store_true',
     help='Output multiline log messages as single records.')
+TASK_NAME = base.Argument(
+    '--task-name',
+    required=False,
+    default=None,
+    help='If set, display only the logs for this particular task.')
 
 
 def GetModelName(positional=True, required=False):
@@ -98,3 +191,27 @@ def GetModelName(positional=True, required=False):
     return base.Argument('model', help=help_text)
   else:
     return base.Argument('--model', help=help_text, required=required)
+
+
+# TODO(b/33234717): remove after PACKAGES nargs=+ deprecation period.
+def ProcessPackages(args):
+  """Flatten PACKAGES flag and warn if multiple arguments were used."""
+  if args.packages is not None:
+    if len(args.packages) > 1:
+      log.warn('Use of --packages with space separated values is '
+               'deprecated and will not work in the future. Use comma '
+               'instead.')
+    # flatten packages into a single list
+    args.packages = list(itertools.chain.from_iterable(args.packages))
+
+
+STAGING_BUCKET = base.Argument(
+    '--staging-bucket',
+    type=storage_util.BucketReference.FromArgument,
+    help="""\
+        Bucket in which to stage training archives.
+
+        Required only if a file upload is necessary (that is, other flags
+        include local paths) and no other flags implicitly specify an upload
+        path.
+        """)

@@ -16,13 +16,38 @@
 
 from apitools.base.py import list_pager
 
-from googlecloudsdk.api_lib.service_management import base_classes
 from googlecloudsdk.api_lib.service_management import services_util
 from googlecloudsdk.calliope import base
 
 
-class List(base.ListCommand, base_classes.BaseServiceManagementCommand):
-  """List service-management for the consumer project."""
+_DETAILED_HELP = {
+    'DESCRIPTION': """\
+        This command lists the services that are produced, enabled, or
+        available to be enabled by a project. You can choose the mode in
+        which the command will list services by using exactly one of the
+        `--produced`, `--enabled`, or `--available` flags.
+        `--produced` is the default.
+        """,
+    'EXAMPLES': """\
+        To list the services the current project produces, run:
+
+          $ {command} --produced
+
+        To list the services the current project has enabled for consumption,
+        run:
+
+          $ {command} --enabled
+
+        To list the services the current project can enable for consumption,
+        run:
+
+          $ {command} --available
+        """,
+}
+
+
+class List(base.ListCommand):
+  """List services for a project."""
 
   @staticmethod
   def Args(parser):
@@ -33,35 +58,27 @@ class List(base.ListCommand, base_classes.BaseServiceManagementCommand):
           on the command line after this command. Positional arguments are
           allowed.
     """
-
-    parser.add_argument('--simple-list',
-                        action='store_true',
-                        default=False,
-                        help=('If true, only the list of resource IDs is '
-                              'printed. If false, a human-readable table of '
-                              'resource information is printed.'))
-
     mode_group = parser.add_mutually_exclusive_group(required=False)
 
     mode_group.add_argument('--enabled',
                             action='store_true',
-                            help=('(DEFAULT) Return the services the project '
-                                  'has enabled for consumption. Or use one of '
+                            help=('(DEFAULT) Return the services which the '
+                                  'project has enabled. Or use one of '
                                   '--produced or --available.'))
 
     mode_group.add_argument('--produced',
                             action='store_true',
                             help=('Return the services that the project '
-                                  'produces. Or use one of --enabled or '
+                                  'has produced. Or use one of --enabled or '
                                   '--available.'))
 
     mode_group.add_argument('--available',
                             action='store_true',
                             help=('Return the services available to the '
-                                  'project for consumption. This list will '
-                                  'include those services the project '
-                                  'already consumes. Or use one of --enabled '
-                                  'or --produced.'))
+                                  'project to enable. This list will '
+                                  'include any services that the project '
+                                  'has already enabled. Or use one of '
+                                  '--enabled or --produced.'))
 
     # Remove unneeded list-related flags from parser
     base.URI_FLAG.RemoveFromParser(parser)
@@ -76,8 +93,7 @@ class List(base.ListCommand, base_classes.BaseServiceManagementCommand):
     Returns:
       The list of managed services for this project.
     """
-    if args.simple_list:
-      args.format = 'value(serviceName)'
+    client = services_util.GetClientInstance()
 
     # Default mode is --enabled, so if no flags were specified,
     # turn on the args.enabled flag.
@@ -89,12 +105,12 @@ class List(base.ListCommand, base_classes.BaseServiceManagementCommand):
     if args.enabled:
       request = services_util.GetEnabledListRequest(validated_project)
     elif args.available:
-      request = services_util.GetAvailableListRequest(validated_project)
+      request = services_util.GetAvailableListRequest()
     elif args.produced:
       request = services_util.GetProducedListRequest(validated_project)
 
     return list_pager.YieldFromList(
-        self.services_client.services,
+        client.services,
         request,
         limit=args.limit,
         batch_size_attribute='pageSize',
@@ -102,4 +118,7 @@ class List(base.ListCommand, base_classes.BaseServiceManagementCommand):
         field='services')
 
   def Collection(self):
-    return 'servicemanagement-v1.services'
+    return services_util.SERVICES_COLLECTION
+
+
+List.detailed_help = _DETAILED_HELP

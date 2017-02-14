@@ -23,25 +23,40 @@ from googlecloudsdk.core import resolvers
 from googlecloudsdk.core import resources
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.GA)
-class Dataproc(base.Group):
-  """Create and manage Google Cloud Dataproc clusters and jobs."""
+DETAILED_HELP = {
+    'DESCRIPTION': """\
+        The gcloud dataproc command group lets you create and manage Google
+        Cloud Dataproc clusters and jobs.
 
-  # The only dataproc region
-  REGION = 'global'
+        Cloud Dataproc is an Apache Hadoop, Apache Spark, Apache Pig, and Apache
+        Hive service. It easily processes big datasets at low cost, creating
+        managed clusters of any size that scale down once processing is
+        complete.
 
-  detailed_help = {
-      'DESCRIPTION': '{description}',
-      'EXAMPLES': """\
-          To see how to create and manage clusters, run:
+        More information on Cloud Dataproc can be found here:
+        https://cloud.google.com/dataproc and detailed documentation can be
+        found here: https://cloud.google.com/dataproc/docs/
+
+        ## EXAMPLES
+
+        To see how to create and manage clusters, run:
 
             $ {command} clusters
 
-          To see how to submit and manage jobs, run:
+        To see how to submit and manage jobs, run:
 
             $ {command} jobs
-          """,
-  }
+        """,
+}
+
+
+@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.GA)
+class Dataproc(base.Group):
+  """Create and manage Google Cloud Dataproc clusters and jobs."""
+  detailed_help = DETAILED_HELP
+
+  # The only dataproc region
+  REGION = 'global'
 
   def Filter(self, context, args):
     context['dataproc_messages'] = apis.GetMessagesModule('dataproc', 'v1')
@@ -50,7 +65,6 @@ class Dataproc(base.Group):
     # TODO(user): Move outside of context in a place that will be easier to
     # convert into a property when there are multiple regions.
     context['dataproc_region'] = self.REGION
-
     context['dataproc_client'] = apis.GetClientInstance('dataproc', 'v1')
 
     resources.REGISTRY.SetParamDefault(
@@ -58,11 +72,23 @@ class Dataproc(base.Group):
         collection=None,
         param='projectId',
         resolver=resolvers.FromProperty(properties.VALUES.core.project))
-
     resources.REGISTRY.SetParamDefault(
         api='dataproc',
         collection=None,
         param='region',
+        resolver=lambda: context['dataproc_region'])
+
+    # These two properties are artifacts of how our Operations API get
+    # converted into generated libraries.
+    resources.REGISTRY.SetParamDefault(
+        api='dataproc',
+        collection=None,
+        param='projectsId',
+        resolver=resolvers.FromProperty(properties.VALUES.core.project))
+    resources.REGISTRY.SetParamDefault(
+        api='dataproc',
+        collection=None,
+        param='regionsId',
         resolver=lambda: context['dataproc_region'])
 
     return context

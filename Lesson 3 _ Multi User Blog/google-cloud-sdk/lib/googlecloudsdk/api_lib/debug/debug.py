@@ -21,7 +21,6 @@ import urllib
 from apitools.base.py import exceptions as apitools_exceptions
 
 from googlecloudsdk.api_lib.debug import errors
-from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.core import apis
 from googlecloudsdk.core import config
 from googlecloudsdk.core import log
@@ -36,11 +35,6 @@ from googlecloudsdk.core.util import retry
 # one named 'default'.
 DEFAULT_MODULE = 'default'
 DEFAULT_VERSION = 'default'
-
-# Currently, Breakpoint IDs are generated using three hex encoded numbers,
-# separated by '-'. The first is always 13-16 digits, the second is always
-# exactly 4 digits, and the third can be up to 8 digits.
-_BREAKPOINT_ID_PATTERN = re.compile(r'^[0-9a-f]{13,16}-[0-9a-f]{4}-[0-9a-f]+$')
 
 
 def SplitLogExpressions(format_string):
@@ -60,7 +54,7 @@ def SplitLogExpressions(format_string):
   Returns:
     string, [string] - The new format string and the array of expressions.
   Raises:
-    InvalidArgumentException: if the string has unbalanced braces.
+    InvalidLogFormatException: if the string has unbalanced braces.
   """
   expressions = []
   log_format = ''
@@ -105,9 +99,8 @@ def SplitLogExpressions(format_string):
       log_format += c
   if brace_count:
     # Unbalanced left brace.
-    raise exceptions.InvalidArgumentException(
-        'LOG_FORMAT_STRING',
-        'Too many "{" characters in format string')
+    raise errors.InvalidLogFormatException(
+        'There are too many "{" characters in the log format string')
   return log_format, expressions
 
 
@@ -150,34 +143,6 @@ def DebugViewUrl(breakpoint):
   return debug_view_url + urllib.urlencode(data)
 
 
-def LogQueryV1String(breakpoint, separator=' '):
-  """Returns an advanced log query string for use with gcloud logging read.
-
-  Args:
-    breakpoint: A breakpoint object with added information on project, service,
-      and debug target.
-    separator: A string to append between conditions
-  Returns:
-    A log query suitable for use with gcloud logging read.
-  """
-  query = (
-      'metadata.serviceName="appengine.googleapis.com"{sep}'
-      'metadata.labels."appengine.googleapis.com/module_id"="{service}"{sep}'
-      'metadata.labels."appengine.googleapis.com/version_id"="{version}"{sep}'
-      'log="appengine.googleapis.com/request_log"{sep}'
-      'metadata.severity={logLevel}').format(
-          service=breakpoint.service, version=breakpoint.version,
-          logLevel=breakpoint.logLevel or 'INFO', sep=separator)
-  if breakpoint.logMessageFormat:
-    # Search for all of the non-expression components of the message.
-    # The re.sub converts the format to a series of quoted strings.
-    query += '{sep}"{text}"'.format(
-        text=re.sub(r'\$([0-9]+)', r'" "',
-                    SplitLogExpressions(breakpoint.logMessageFormat)[0]),
-        sep=separator)
-  return query
-
-
 def LogQueryV2String(breakpoint, separator=' '):
   """Returns an advanced log query string for use with gcloud logging read.
 
@@ -187,6 +152,8 @@ def LogQueryV2String(breakpoint, separator=' '):
     separator: A string to append between conditions
   Returns:
     A log query suitable for use with gcloud logging read.
+  Raises:
+    InvalidLogFormatException if the breakpoint has an invalid log expression.
   """
   query = (
       'resource.type=gae_app{sep}'
@@ -221,65 +188,57 @@ def LogViewUrl(breakpoint):
   debug_view_url = 'https://console.cloud.google.com/logs?'
   data = [
       ('project', breakpoint.project),
-      ('advancedFilter', LogQueryV1String(breakpoint, separator='\n') + '\n')
+      ('advancedFilter', LogQueryV2String(breakpoint, separator='\n') + '\n')
   ]
   return debug_view_url + urllib.urlencode(data)
 
 
 class DebugObject(object):
   """Base class for debug api wrappers."""
-  _debug_client = None
-  _debug_messages = None
-  _resource_client = None
-  _resource_messages = None
 
   # Lock for remote calls in routines which might be multithreaded. Client
   # connections are not thread-safe. Currently, only WaitForBreakpoint can
   # be called from multiple threads.
   _client_lock = threading.Lock()
 
-  # Breakpoint type constants (initialized by IntializeApiClients)
-  SNAPSHOT_TYPE = None
-  LOGPOINT_TYPE = None
+  # Breakpoint type name constants
+  SNAPSHOT_TYPE = 'SNAPSHOT'
+  LOGPOINT_TYPE = 'LOGPOINT'
+
+  def BreakpointAction(self, type_name):
+    if type_name == self.SNAPSHOT_TYPE:
+      return self._debug_messages.Breakpoint.ActionValueValuesEnum.CAPTURE
+    if type_name == self.LOGPOINT_TYPE:
+      return self._debug_messages.Breakpoint.ActionValueValuesEnum.LOG
+    raise errors.InvalidBreakpointTypeError(type_name)
 
   CLIENT_VERSION = 'google.com/gcloud/{0}'.format(config.CLOUD_SDK_VERSION)
 
-  @classmethod
-  def _CheckClient(cls):
-    if (not cls._debug_client or not cls._debug_messages or
-        not cls._resource_client or not cls._resource_messages):
-      raise errors.NoEndpointError()
-
-  @classmethod
-  def InitializeApiClients(cls):
+  def __init__(self, debug_client=None, debug_messages=None,
+               resource_client=None, resource_messages=None):
     """Sets up class with instantiated api client."""
-    cls._debug_client = apis.GetClientInstance('clouddebugger', 'v2')
-    cls._debug_messages = apis.GetMessagesModule('clouddebugger', 'v2')
-    cls._resource_client = apis.GetClientInstance(
-        'cloudresourcemanager', 'v1beta1')
-    cls._resource_messages = apis.GetMessagesModule(
-        'cloudresourcemanager', 'v1beta1')
-    cls.SNAPSHOT_TYPE = (
-        cls._debug_messages.Breakpoint.ActionValueValuesEnum.CAPTURE)
-    cls.LOGPOINT_TYPE = cls._debug_messages.Breakpoint.ActionValueValuesEnum.LOG
-    cls._resource_parser = resources.REGISTRY.Clone()
-    cls._resource_parser.RegisterApiByName('clouddebugger', 'v2')
-
-  @classmethod
-  def TryParse(cls, *args, **kwargs):
-    try:
-      return cls._resource_parser.Parse(*args, **kwargs)
-    except (resources.InvalidResourceException,
-            resources.UnknownCollectionException,
-            resources.WrongFieldNumberException):
-      return None
+    self._debug_client = (
+        debug_client or apis.GetClientInstance('clouddebugger', 'v2'))
+    self._debug_messages = (
+        debug_messages or apis.GetMessagesModule('clouddebugger', 'v2'))
+    self._resource_client = (
+        resource_client or
+        apis.GetClientInstance('cloudresourcemanager', 'v1beta1'))
+    self._resource_messages = (
+        resource_messages or
+        apis.GetMessagesModule('cloudresourcemanager', 'v1beta1'))
+    self._resource_parser = resources.REGISTRY.Clone()
+    self._resource_parser.RegisterApiByName('clouddebugger', 'v2')
 
 
 class Debugger(DebugObject):
   """Abstracts Cloud Debugger service for a project."""
 
-  def __init__(self, project):
-    self._CheckClient()
+  def __init__(self, project, debug_client=None, debug_messages=None,
+               resource_client=None, resource_messages=None):
+    super(Debugger, self).__init__(
+        debug_client=debug_client, debug_messages=debug_messages,
+        resource_client=resource_client, resource_messages=resource_messages)
     self._project = project
 
   def ListDebuggees(self, include_inactive=False, include_stale=False):
@@ -358,10 +317,35 @@ class Debugger(DebugObject):
               debuggee.name))
       return debuggee
 
+    try:
+      # Look for active debuggees first, since there are usually very
+      # few of them compared to inactive debuggees.
+      all_debuggees = self.ListDebuggees()
+      return self._FilterDebuggeeList(all_debuggees, pattern)
+    except errors.NoDebuggeeError:
+      # Try looking at inactive debuggees
+      pass
     all_debuggees = self.ListDebuggees(include_inactive=True,
                                        include_stale=True)
+    return self._FilterDebuggeeList(all_debuggees, pattern)
+
+  def _FilterDebuggeeList(self, all_debuggees, pattern):
+    """Finds the debuggee which matches the given pattern.
+
+    Args:
+      all_debuggees: A list of debuggees to search.
+      pattern: A string containing a debuggee ID or a regular expression that
+        matches a single debuggee's name or description. If it matches any
+        debuggee name, the description will not be inspected.
+    Returns:
+      The matching Debuggee.
+    Raises:
+      errors.MultipleDebuggeesError if the pattern matches multiple debuggees.
+      errors.NoDebuggeeError if the pattern matches no debuggees.
+    """
     if not all_debuggees:
       raise errors.NoDebuggeeError()
+
     latest_debuggees = _FilterStaleMinorVersions(all_debuggees)
 
     # Find all debuggees specified by ID, plus all debuggees which are the
@@ -421,7 +405,11 @@ class Debugger(DebugObject):
 class Debuggee(DebugObject):
   """Represents a single debuggee."""
 
-  def __init__(self, message):
+  def __init__(self, message, debug_client=None, debug_messages=None,
+               resource_client=None, resource_messages=None):
+    super(Debuggee, self).__init__(
+        debug_client=debug_client, debug_messages=debug_messages,
+        resource_client=resource_client, resource_messages=resource_messages)
     self.project = message.project
     self.agent_version = message.agentVersion
     self.description = message.description
@@ -510,7 +498,7 @@ class Debuggee(DebugObject):
     except apitools_exceptions.HttpError as error:
       raise errors.UnknownHttpError(error)
 
-  def ListBreakpoints(self, location_regexp_or_ids=None,
+  def ListBreakpoints(self, location_regexp=None, resource_ids=None,
                       include_all_users=False, include_inactive=False,
                       restrict_to_type=None):
     """Returns all breakpoints matching the given IDs or patterns.
@@ -520,11 +508,12 @@ class Debuggee(DebugObject):
     equal to the pattern (there can be at most one breakpoint matching by ID).
 
     Args:
-      location_regexp_or_ids: A list of regular expressions or breakpoint IDs.
-        Regular expressions will be compared against the location ('path:line')
-        of the breakpoints. Exact breakpoint IDs will be retrieved regardless
-        of the include_all_users or include_inactive flags.  If empty or None,
-        all breakpoints will be returned.
+      location_regexp: A list of regular expressions to compare against the
+        location ('path:line') of the breakpoints. If both location_regexp and
+        resource_ids are empty or None, all breakpoints will be returned.
+      resource_ids: Zero or more resource IDs in the form expected by the
+        resource parser. These breakpoints will be retrieved regardless
+        of the include_all_users or include_inactive flags
       include_all_users: If true, search breakpoints created by all users.
       include_inactive: If true, search breakpoints that are in the final state.
         This option controls whether regular expressions can match inactive
@@ -535,33 +524,23 @@ class Debuggee(DebugObject):
     Returns:
       A list of all matching breakpoints.
     Raises:
-      InvalidArgumentException if a regular expression is not valid.
+      InvalidLocationException if a regular expression is not valid.
     """
-    self._CheckClient()
-    # Try using the resource parser on every argument, and save the resulting
-    # (argument, resource) pairs
-    parsed_args = [
-        (arg, self.TryParse(
-            arg, params={'debuggeeId': self.target_id},
-            collection='clouddebugger.debugger.debuggees.breakpoints'))
-        for arg in location_regexp_or_ids or []]
-
-    # Pass through the results and find anything that looks like a breakpoint
-    # ID. This will include things that looked like an ID originally, plus
-    # any IDs the resource parser detected.
-    ids = set([r.Name() for _, r in parsed_args
-               if r and _BREAKPOINT_ID_PATTERN.match(r.Name())])
-
-    # Treat everything that's not an ID (i.e. everything that either wasn't
-    # parsable as a resource or whose name doesn't look like an ID) as a reqular
-    # expression to be checked against the breakpoint location. Tweak the RE
-    # so it will also match just the trailing file name component(s) + line
-    # number, since the server may chose to return the full path.
-    try:
-      patterns = [re.compile(r'^(.*/)?(' + arg + ')$') for arg, r in parsed_args
-                  if not r or (r.Name() not in ids)]
-    except re.error as e:
-      raise exceptions.InvalidArgumentException('LOCATION-REGEXP', str(e))
+    resource_ids = resource_ids or []
+    location_regexp = location_regexp or []
+    ids = set(
+        [self._resource_parser.Parse(
+            r, params={'debuggeeId': self.target_id},
+            collection='clouddebugger.debugger.debuggees.breakpoints').Name()
+         for r in resource_ids])
+    patterns = []
+    for r in location_regexp:
+      try:
+        patterns.append(re.compile(r'^(.*/)?(' + r + ')$'))
+      except re.error as e:
+        raise errors.InvalidLocationException(
+            'The location pattern "{0}" is not a valid Python regular '
+            'expression: {1}'.format(r, e))
 
     request = (self._debug_messages.
                ClouddebuggerDebuggerDebuggeesBreakpointsListRequest(
@@ -573,7 +552,7 @@ class Debuggee(DebugObject):
       response = self._debug_client.debugger_debuggees_breakpoints.List(request)
     except apitools_exceptions.HttpError as error:
       raise errors.UnknownHttpError(error)
-    if not location_regexp_or_ids:
+    if not patterns and not ids:
       return self._FilteredDictListWithInfo(response.breakpoints,
                                             restrict_to_type)
 
@@ -590,7 +569,6 @@ class Debuggee(DebugObject):
       result = [bp for bp in response.breakpoints
                 if _BreakpointMatchesIdOrRegexp(
                     bp, ids, [] if bp.isFinalState else patterns)]
-
     # Check if any ids were missing, and fetch them individually. This can
     # happen if an ID for another user's breakpoint was specified, but the
     # all_users flag was false. This code will also raise an error for any
@@ -626,7 +604,6 @@ class Debuggee(DebugObject):
     Returns:
       The created Breakpoint message.
     """
-    self._CheckClient()
     labels_value = None
     if labels:
       labels_value = self._debug_messages.Breakpoint.LabelsValue(
@@ -673,15 +650,14 @@ class Debuggee(DebugObject):
     Returns:
       The created Breakpoint message.
     Raises:
-      InvalidArgumentException: if location or log_format is empty or malformed.
+      InvalidLocationException: if location is empty or malformed.
+      InvalidLogFormatException: if log_format is empty or malformed.
     """
-    self._CheckClient()
     if not location:
-      raise exceptions.InvalidArgumentException(
-          'LOCATION', 'The location must not be empty.')
+      raise errors.InvalidLocationException(
+          'The location must not be empty.')
     if not log_format_string:
-      raise exceptions.InvalidArgumentException(
-          'LOG_FORMAT_STRING',
+      raise errors.InvalidLogFormatException(
           'The log format string must not be empty.')
     labels_value = None
     if labels:
@@ -840,7 +816,7 @@ class Debuggee(DebugObject):
       result.HideExistingField('expressions')
 
     if not message.status or not message.status.isError:
-      if message.action == self.LOGPOINT_TYPE:
+      if message.action == self.BreakpointAction(self.LOGPOINT_TYPE):
         # We can only generate view URLs for GAE, since there's not a standard
         # way to view them in GCE. Use the presence of minorversion as an
         # indicator that it's GAE.
@@ -860,19 +836,17 @@ class Debuggee(DebugObject):
     Returns:
       The corresponding SourceLocation message.
     Raises:
-      InvalidArgumentException: if the line is not of the form path:line
+      InvalidLocationException: if the line is not of the form path:line
     """
     components = location.split(':')
     if len(components) != 2:
-      raise exceptions.InvalidArgumentException(
-          'LOCATION',
+      raise errors.InvalidLocationException(
           'Location must be of the form "path:line"')
     try:
       return self._debug_messages.SourceLocation(path=components[0],
                                                  line=int(components[1]))
     except ValueError:
-      raise exceptions.InvalidArgumentException(
-          'LOCATION',
+      raise errors.InvalidLocationException(
           'Location must be of the form "path:line", where "line" must be an '
           'integer.')
 
@@ -888,7 +862,8 @@ class Debuggee(DebugObject):
       added.
     """
     return [self.AddTargetInfo(r) for r in result
-            if not restrict_to_type or r.action == restrict_to_type
+            if not restrict_to_type
+            or r.action == self.BreakpointAction(restrict_to_type)
             or (not r.action and restrict_to_type == self.SNAPSHOT_TYPE)]
 
 

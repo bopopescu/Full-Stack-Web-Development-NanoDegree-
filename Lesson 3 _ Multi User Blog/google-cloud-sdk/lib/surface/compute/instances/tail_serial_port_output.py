@@ -18,7 +18,6 @@ import time
 from googlecloudsdk.api_lib.compute import base_classes
 from googlecloudsdk.api_lib.compute import request_helper
 from googlecloudsdk.calliope import arg_parsers
-from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.compute import flags
 from googlecloudsdk.command_lib.compute.instances import flags as instance_flags
 from googlecloudsdk.core import exceptions
@@ -29,7 +28,6 @@ class TailSerialPortOutputException(exceptions.Error):
   """An error occurred while tailing the serial port."""
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.ALPHA)
 class TailSerialPortOutput(base_classes.BaseCommand):
   """Tail output from a virtual machine instance's serial port."""
 
@@ -75,8 +73,7 @@ class TailSerialPortOutput(base_classes.BaseCommand):
           requests=[request],
           http=self.http,
           batch_url=self.batch_url,
-          errors=errors,
-          custom_get_requests=None))
+          errors=errors))
       if errors:
         raise TailSerialPortOutputException(
             'Could not fetch serial port output: ' +

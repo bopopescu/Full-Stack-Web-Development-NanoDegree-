@@ -13,24 +13,23 @@
 # limitations under the License.
 
 """Delete operation command."""
-
+from googlecloudsdk.api_lib.dataproc import util
 from googlecloudsdk.calliope import base
-from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.core import log
 from googlecloudsdk.core.console import console_io
 
 
 class Delete(base.DeleteCommand):
-  """Delete the record of an inactive operation."""
+  """Delete the record of an inactive operation.
 
-  detailed_help = {
-      'DESCRIPTION': '{description}',
-      'EXAMPLES': """\
-          To delete the record of an operation, run:
+  Delete the record of an inactive operation.
 
-            $ {command} operation_id
-          """,
-  }
+  ## EXAMPLES
+
+  To delete the record of an operation, run:
+
+    $ {command} operation_id
+  """
 
   @staticmethod
   def Args(parser):
@@ -40,12 +39,15 @@ class Delete(base.DeleteCommand):
     client = self.context['dataproc_client']
     messages = self.context['dataproc_messages']
 
-    request = messages.DataprocProjectsRegionsOperationsDeleteRequest(
-        name=args.operation)
+    operation_ref = util.ParseOperation(args.operation, self.context)
 
-    if not console_io.PromptContinue(
-        message="The operation '{0}' will be deleted.".format(args.operation)):
-      raise exceptions.ToolException('Deletion aborted by user.')
+    request = messages.DataprocProjectsRegionsOperationsDeleteRequest(
+        name=operation_ref.RelativeName())
+
+    console_io.PromptContinue(
+        message="The operation '{0}' will be deleted.".format(args.operation),
+        cancel_on_no=True,
+        cancel_string='Deletion aborted by user.')
 
     client.projects_regions_operations.Delete(request)
 

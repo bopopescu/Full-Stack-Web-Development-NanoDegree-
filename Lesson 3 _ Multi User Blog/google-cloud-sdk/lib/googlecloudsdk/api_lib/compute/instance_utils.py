@@ -12,14 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Convenience functions for dealing with instances and instance templates."""
+import collections
 import re
 
+from googlecloudsdk.api_lib.compute import alias_ip_range_utils
 from googlecloudsdk.api_lib.compute import constants
 from googlecloudsdk.api_lib.compute import csek_utils
+from googlecloudsdk.api_lib.compute import image_utils
 from googlecloudsdk.api_lib.compute import utils
 from googlecloudsdk.calliope import exceptions
+from googlecloudsdk.command_lib.compute import scope as compute_scopes
 from googlecloudsdk.command_lib.compute.instances import flags
-from googlecloudsdk.third_party.py27 import py27_collections as collections
+from googlecloudsdk.core import log
 
 
 def GetCpuRamFromCustomName(name):
@@ -45,27 +49,32 @@ def GetCpuRamFromCustomName(name):
   return None, None
 
 
-def GetNameForCustom(custom_cpu, custom_memory_mib):
+def GetNameForCustom(custom_cpu, custom_memory_mib, ext=False):
   """Creates a custom machine type name from the desired CPU and memory specs.
 
   Args:
     custom_cpu: the number of cpu desired for the custom machine type
     custom_memory_mib: the amount of ram desired in MiB for the custom machine
       type instance
+    ext: extended custom machine type should be used if true
 
   Returns:
     The custom machine type name for the 'instance create' call
   """
-  return 'custom-{0}-{1}'.format(custom_cpu, custom_memory_mib)
+  machine_type = 'custom-{0}-{1}'.format(custom_cpu, custom_memory_mib)
+  if ext:
+    machine_type += '-ext'
+  return machine_type
 
 
-def InterpretMachineType(machine_type, custom_cpu, custom_memory):
+def InterpretMachineType(machine_type, custom_cpu, custom_memory, ext=True):
   """Interprets the machine type for the instance.
 
   Args:
     machine_type: name of existing machine type, eg. n1-standard
     custom_cpu: number of CPU cores for custom machine type,
-    custom_memory: amout of RAM memory in bytes for custom machine type,
+    custom_memory: amount of RAM memory in bytes for custom machine type,
+    ext: extended custom machine type should be used if true,
 
   Returns:
     A string representing the URL naming a machine-type.
@@ -82,27 +91,27 @@ def InterpretMachineType(machine_type, custom_cpu, custom_memory):
     machine_type_name = machine_type
 
   # Setting the specs for the custom machine.
-  if custom_cpu or custom_memory:
-    if custom_cpu or custom_memory:
-      if machine_type:
-        raise exceptions.InvalidArgumentException(
-            '--machine-type', 'Cannot set both [--machine-type] and '
-            '[--custom-cpu]/[--custom-memory] for the same instance.')
-      if not custom_cpu:
-        raise exceptions.RequiredArgumentException(
-            '--custom-cpu', 'Both [--custom-cpu] and [--custom-memory] must be '
-            'set to create a custom machine type instance.')
-      if not custom_memory:
-        raise exceptions.RequiredArgumentException(
-            '--custom-memory', 'Both [--custom-cpu] and [--custom-memory] must '
-            'be set to create a custom machine type instance.')
-      custom_type_string = GetNameForCustom(
-          custom_cpu,
-          # converting from B to MiB.
-          int(custom_memory / (2 ** 20)))
+  if custom_cpu or custom_memory or ext:
+    if not custom_cpu:
+      raise exceptions.RequiredArgumentException(
+          '--custom-cpu', 'Both [--custom-cpu] and [--custom-memory] must be '
+          'set to create a custom machine type instance.')
+    if not custom_memory:
+      raise exceptions.RequiredArgumentException(
+          '--custom-memory', 'Both [--custom-cpu] and [--custom-memory] must '
+          'be set to create a custom machine type instance.')
+    if machine_type:
+      raise exceptions.InvalidArgumentException(
+          '--machine-type', 'Cannot set both [--machine-type] and '
+          '[--custom-cpu]/[--custom-memory] for the same instance.')
+    custom_type_string = GetNameForCustom(
+        custom_cpu,
+        # converting from B to MiB.
+        int(custom_memory / (2 ** 20)),
+        ext)
 
-      # Updating the machine type that is set for the URIs
-      machine_type_name = custom_type_string
+    # Updating the machine type that is set for the URIs
+    machine_type_name = custom_type_string
   return machine_type_name
 
 
@@ -143,19 +152,39 @@ def CheckCustomCpuRamRatio(compute_client, project, zone, machine_type_name):
           error_message='Could not fetch machine type:')
 
 
-def CreateServiceAccountMessages(messages, scopes):
+def CreateServiceAccountMessages(messages, scopes, service_account):
   """Returns a list of ServiceAccount messages corresponding to scopes."""
+  silence_deprecation_warning = False
   if scopes is None:
     scopes = constants.DEFAULT_SCOPES
+  # if user provided --no-service-account, it is already verified that
+  # scopes == [] and thus service_account value will not be used
+  service_account_specified = service_account is not None
+  if service_account is None:
+    service_account = 'default'
 
   accounts_to_scopes = collections.defaultdict(list)
   for scope in scopes:
     parts = scope.split('=')
     if len(parts) == 1:
-      account = 'default'
+      account = service_account
       scope_uri = scope
     elif len(parts) == 2:
       account, scope_uri = parts
+      if service_account_specified:
+        raise exceptions.InvalidArgumentException(
+            '--scopes',
+            'It is illegal to mix old --scopes flag format '
+            '[--scopes {0}={1}] with [--service-account ACCOUNT] flag. Use '
+            '[--scopes {1} --service-account {2}] instead.'
+            .format(account, scope_uri, service_account))
+      # TODO(b/33688878) Remove support for this deprecated format
+      if not silence_deprecation_warning:
+        log.warning(
+            'Flag format --scopes [ACCOUNT=]SCOPE, [[ACCOUNT=]SCOPE, ...] is '
+            'deprecated and will be removed 24th Jan 2018. Use --scopes SCOPE'
+            '[, SCOPE...] --service-account ACCOUNT instead.')
+        silence_deprecation_warning = True  # Do not warn again for each scope
     else:
       raise exceptions.ToolException(
           '[{0}] is an illegal value for [--scopes]. Values must be of the '
@@ -163,9 +192,8 @@ def CreateServiceAccountMessages(messages, scopes):
 
     # Expands the scope if the user provided an alias like
     # "compute-rw".
-    scope_uri = constants.SCOPES.get(scope_uri, scope_uri)
-
-    accounts_to_scopes[account].append(scope_uri)
+    scope_uri = constants.SCOPES.get(scope_uri, [scope_uri])
+    accounts_to_scopes[account].extend(scope_uri)
 
   res = []
   for account, scopes in sorted(accounts_to_scopes.iteritems()):
@@ -207,7 +235,7 @@ def CreateSchedulingMessage(
 
 def CreateMachineTypeUris(
     resources, compute_client, project,
-    machine_type, custom_cpu, custom_memory, instance_refs):
+    machine_type, custom_cpu, custom_memory, ext, instance_refs):
   """Create machine type URIs for given args and instance references."""
   # The element at index i is the machine type URI for instance
   # i. We build this list here because we want to delay work that
@@ -219,7 +247,7 @@ def CreateMachineTypeUris(
 
   # Setting the machine type
   machine_type_name = InterpretMachineType(
-      machine_type, custom_cpu, custom_memory)
+      machine_type, custom_cpu, custom_memory, ext)
 
   for instance_ref in instance_refs:
     # Check to see if the custom machine type ratio is supported
@@ -236,31 +264,49 @@ def CreateMachineTypeUris(
   return machine_type_uris
 
 
-def CreateNetworkInterfaceMessage(
-    resources, compute_client,
-    network, subnet, private_network_ip, no_address, address,
-    instance_refs):
+def CreateNetworkInterfaceMessage(resources,
+                                  compute_client,
+                                  network,
+                                  subnet,
+                                  private_network_ip,
+                                  no_address,
+                                  address,
+                                  instance_refs,
+                                  alias_ip_ranges_string=None,
+                                  no_public_dns=None,
+                                  public_dns=None,
+                                  no_public_ptr=None,
+                                  public_ptr=None,
+                                  no_public_ptr_domain=None,
+                                  public_ptr_domain=None):
   """Returns a new NetworkInterface message."""
   # TODO(b/30460572): instance reference should have zone name, not zone URI.
   region = utils.ZoneNameToRegionName(instance_refs[0].zone.split('/')[-1])
   messages = compute_client.messages
-  network_interface = None
+  network_interface = messages.NetworkInterface()
+  # By default interface is attached to default network. If network or subnet
+  # are specified they're used instead.
   if subnet is not None:
     subnet_ref = resources.Parse(
         subnet,
         collection='compute.subnetworks',
         params={'region': region})
-    network_interface = messages.NetworkInterface(
-        subnetwork=subnet_ref.SelfLink())
-  else:
+    network_interface.subnetwork = subnet_ref.SelfLink()
+  if network is not None:
+    network_ref = resources.Parse(network, collection='compute.networks')
+    network_interface.network = network_ref.SelfLink()
+  elif subnet is None:
     network_ref = resources.Parse(
-        network or constants.DEFAULT_NETWORK,
-        collection='compute.networks')
-    network_interface = messages.NetworkInterface(
-        network=network_ref.SelfLink())
+        constants.DEFAULT_NETWORK, collection='compute.networks')
+    network_interface.network = network_ref.SelfLink()
 
   if private_network_ip is not None:
     network_interface.networkIP = private_network_ip
+
+  if alias_ip_ranges_string:
+    network_interface.aliasIpRanges = (
+        alias_ip_range_utils.CreateAliasIpRangeMessagesFromString(
+            messages, True, alias_ip_ranges_string))
 
   if not no_address:
     access_config = messages.AccessConfig(
@@ -275,6 +321,19 @@ def CreateNetworkInterfaceMessage(
           resources, compute_client, address, region)
       if address_resource:
         access_config.natIP = address_resource
+
+    if no_public_dns is True:
+      access_config.setPublicDns = False
+    elif public_dns is True:
+      access_config.setPublicDns = True
+
+    if no_public_ptr is True:
+      access_config.setPublicPtr = False
+    elif public_ptr is True:
+      access_config.setPublicPtr = True
+
+    if no_public_ptr_domain is not True and public_ptr_domain is not None:
+      access_config.publicPtrDomainName = public_ptr_domain
 
     network_interface.accessConfigs = [access_config]
 
@@ -304,8 +363,21 @@ def CreateNetworkInterfaceMessages(
           resources, compute_client, interface.get('network', None),
           interface.get('subnet', None),
           interface.get('private-network-ip', None), no_address,
-          address, instance_refs))
+          address, instance_refs, interface.get('aliases', None)))
   return result
+
+
+def ParseDiskResource(resources, name, zone, type_):
+  if type_ == compute_scopes.ScopeEnum.REGION:
+    return resources.Parse(
+        name,
+        collection='compute.regionDisks',
+        params={'region': utils.ZoneNameToRegionName(zone)})
+  else:
+    return resources.Parse(
+        name,
+        collection='compute.disks',
+        params={'zone': zone})
 
 
 def CreatePersistentAttachedDiskMessages(
@@ -329,10 +401,11 @@ def CreatePersistentAttachedDiskMessages(
     boot = disk.get('boot') == 'yes'
     auto_delete = disk.get('auto-delete') == 'yes'
 
-    disk_ref = resources.Parse(
-        name,
-        collection='compute.disks',
-        params={'zone': instance_ref.zone})
+    if 'scope' in disk and disk['scope'] == 'regional':
+      scope = compute_scopes.ScopeEnum.REGION
+    else:
+      scope = compute_scopes.ScopeEnum.ZONE
+    disk_ref = ParseDiskResource(resources, name, instance_ref.zone, scope)
 
     if boot:
       boot_disk_ref = disk_ref
@@ -416,7 +489,10 @@ def CreatePersistentCreateDiskMessages(scope_prompter, compute_client,
       disk_type_ref = None
       disk_type_uri = None
 
-    image_uri, _ = scope_prompter.ExpandImageFlag(
+    image_expander = image_utils.ImageExpander(scope_prompter.compute_client,
+                                               scope_prompter.resources)
+    image_uri, _ = image_expander.ExpandImageFlag(
+        user_project=scope_prompter.project,
         image=disk.get('image'),
         image_family=disk.get('image-family'),
         image_project=disk.get('image-project'),
@@ -453,6 +529,26 @@ def CreatePersistentCreateDiskMessages(scope_prompter, compute_client,
     disks_messages.append(create_disk)
 
   return disks_messages
+
+
+def CreateAcceleratorConfigMessages(msgs, accelerator_type_ref,
+                                    accelerator_count):
+  """Returns a list of accelerator config messages.
+
+  Args:
+    msgs: tracked GCE API messages.
+    accelerator_type_ref: reference to the accelerator type.
+    accelerator_count: number of accelerators to attach to the VM.
+
+  Returns:
+    a list of accelerator config message that specifies the type and number of
+    accelerators to attach to an instance.
+  """
+
+  accelerator_config = msgs.AcceleratorConfig(
+      acceleratorType=accelerator_type_ref.SelfLink(),
+      acceleratorCount=accelerator_count)
+  return [accelerator_config]
 
 
 def CreateDefaultBootAttachedDiskMessage(

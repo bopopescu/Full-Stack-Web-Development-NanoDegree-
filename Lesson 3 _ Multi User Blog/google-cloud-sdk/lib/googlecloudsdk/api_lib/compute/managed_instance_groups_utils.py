@@ -203,39 +203,28 @@ def ValidateAutoscalerArgs(args):
           'for queue-based autoscaling.')
 
 
-def GetInstanceGroupManagerOrThrow(igm_ref, project, compute,
-                                   http, batch_url):
+def GetInstanceGroupManagerOrThrow(igm_ref, client):
   """Retrieves the given Instance Group Manager if possible.
 
   Args:
     igm_ref: reference to the Instance Group Manager.
-    project: project owning resources.
-    compute: module representing compute api.
-    http: communication channel.
-    batch_url: batch url.
+    client: The compute client.
   Returns:
     Instance Group Manager object.
   """
   if hasattr(igm_ref, 'region'):
-    service = compute.regionInstanceGroupManagers
-    request = service.GetRequestType('Get')(project=project)
-    request.region = igm_ref.region
+    service = client.apitools_client.regionInstanceGroupManagers
+    request_type = service.GetRequestType('Get')
   if hasattr(igm_ref, 'zone'):
-    service = compute.instanceGroupManagers
-    request = service.GetRequestType('Get')(project=project)
-    request.zone = igm_ref.zone
-  request.instanceGroupManager = igm_ref.Name()
+    service = client.apitools_client.instanceGroupManagers
+    request_type = service.GetRequestType('Get')
+  request = request_type(**igm_ref.AsDict())
 
   errors = []
   # Run throught the generator to actually make the requests and get potential
   # errors.
-  igm_details = list(request_helper.MakeRequests(
-      requests=[(service, 'Get', request)],
-      http=http,
-      batch_url=batch_url,
-      errors=errors,
-      custom_get_requests=None,
-  ))
+  igm_details = client.MakeRequests([(service, 'Get', request)],
+                                    errors_to_collect=errors)
 
   if errors or len(igm_details) != 1:
     utils.RaiseException(errors, ResourceNotFoundException,
@@ -305,8 +294,7 @@ def AutoscalersForLocations(zones, regions,
       requests=requests,
       http=http,
       batch_url=batch_url,
-      errors=errors,
-      custom_get_requests=None))
+      errors=errors))
 
   if errors:
     utils.RaiseToolException(
@@ -545,18 +533,18 @@ def AdjustAutoscalerNameForCreation(autoscaler_resource):
   autoscaler_resource.name = new_name
 
 
-def BuildAutoscaler(args, messages, autoscaler_ref, igm_ref):
+def BuildAutoscaler(args, messages, igm_ref, name, zone=None, region=None):
   """Builds autoscaler message protocol buffer."""
   autoscaler = messages.Autoscaler(
       autoscalingPolicy=_BuildAutoscalerPolicy(args, messages),
       description=args.description,
-      name=autoscaler_ref.Name(),
+      name=name,
       target=igm_ref.SelfLink(),
   )
-  if hasattr(igm_ref, 'zone'):
-    autoscaler.zone = autoscaler_ref.zone
-  if hasattr(igm_ref, 'region'):
-    autoscaler.region = autoscaler_ref.region
+  if zone:
+    autoscaler.zone = zone
+  if region:
+    autoscaler.region = region
   return autoscaler
 
 

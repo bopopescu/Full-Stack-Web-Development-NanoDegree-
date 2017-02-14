@@ -11,20 +11,41 @@ package = 'deploymentmanager'
 
 
 class AuditConfig(_messages.Message):
-  """Enables "data access" audit logging for a service and specifies a list of
-  members that are log-exempted.
+  """Specifies the audit configuration for a service. It consists of which
+  permission types are logged, and what identities, if any, are exempted from
+  logging. An AuditConifg must have one or more AuditLogConfigs.
 
   Fields:
+    auditLogConfigs: The configuration for logging of each type of permission.
     exemptedMembers: Specifies the identities that are exempted from "data
       access" audit logging for the `service` specified above. Follows the
-      same format of Binding.members.
-    service: Specifies a service that will be enabled for "data access" audit
-      logging. For example, `resourcemanager`, `storage`, `compute`.
-      `allServices` is a special value that covers all services.
+      same format of Binding.members. This field is deprecated in favor of
+      per-permission-type exemptions.
+    service: Specifies a service that will be enabled for audit logging. For
+      example, `resourcemanager`, `storage`, `compute`. `allServices` is a
+      special value that covers all services.
+  """
+
+  auditLogConfigs = _messages.MessageField('AuditLogConfig', 1, repeated=True)
+  exemptedMembers = _messages.StringField(2, repeated=True)
+  service = _messages.StringField(3)
+
+
+class AuditLogConfig(_messages.Message):
+  """Provides the configuration for logging a type of permissions. Example:  {
+  "audit_log_configs": [ { "log_type": "DATA_READ", "exempted_members": [
+  "user:foo@gmail.com" ] }, { "log_type": "DATA_WRITE", } ] }  This enables
+  'DATA_READ' and 'DATA_WRITE' logging, while exempting foo@gmail.com from
+  DATA_READ logging.
+
+  Fields:
+    exemptedMembers: Specifies the identities that do not cause logging for
+      this type of permission. Follows the same format of [Binding.members][].
+    logType: The log type that this config enables.
   """
 
   exemptedMembers = _messages.StringField(1, repeated=True)
-  service = _messages.StringField(2)
+  logType = _messages.StringField(2)
 
 
 class Binding(_messages.Message):
@@ -38,8 +59,8 @@ class Binding(_messages.Message):
       identifier that represents anyone who is authenticated with a Google
       account or a service account.  * `user:{emailid}`: An email address that
       represents a specific Google account. For example, `alice@gmail.com` or
-      `joe@example.com`.  * `serviceAccount:{emailid}`: An email address that
-      represents a service account. For example, `my-other-
+      `joe@example.com`.    * `serviceAccount:{emailid}`: An email address
+      that represents a service account. For example, `my-other-
       app@appspot.gserviceaccount.com`.  * `group:{emailid}`: An email address
       that represents a Google group. For example, `admins@example.com`.  *
       `domain:{domain}`: A Google Apps domain name that represents all the
@@ -199,13 +220,29 @@ class DeploymentmanagerDeploymentsCancelPreviewRequest(_messages.Message):
 class DeploymentmanagerDeploymentsDeleteRequest(_messages.Message):
   """A DeploymentmanagerDeploymentsDeleteRequest object.
 
+  Enums:
+    DeletePolicyValueValuesEnum: Sets the policy to use for deleting
+      resources.
+
   Fields:
+    deletePolicy: Sets the policy to use for deleting resources.
     deployment: The name of the deployment for this request.
     project: The project ID for this request.
   """
 
-  deployment = _messages.StringField(1, required=True)
-  project = _messages.StringField(2, required=True)
+  class DeletePolicyValueValuesEnum(_messages.Enum):
+    """Sets the policy to use for deleting resources.
+
+    Values:
+      ABANDON: <no description>
+      DELETE: <no description>
+    """
+    ABANDON = 0
+    DELETE = 1
+
+  deletePolicy = _messages.EnumField('DeletePolicyValueValuesEnum', 1, default=u'DELETE')
+  deployment = _messages.StringField(2, required=True)
+  project = _messages.StringField(3, required=True)
 
 
 class DeploymentmanagerDeploymentsGetIamPolicyRequest(_messages.Message):
@@ -833,8 +870,7 @@ class Operation(_messages.Message):
 
   Fields:
     clientOperationId: [Output Only] Reserved for future use.
-    creationTimestamp: [Output Only] Creation timestamp in RFC3339 text
-      format.
+    creationTimestamp: [Deprecated] This field is deprecated.
     description: [Output Only] A textual description of the operation, which
       is set when the operation is created.
     endTime: [Output Only] The time that this operation was completed. This
@@ -872,8 +908,8 @@ class Operation(_messages.Message):
     targetId: [Output Only] The unique target ID, which identifies a specific
       incarnation of the target resource.
     targetLink: [Output Only] The URL of the resource that the operation
-      modifies. If creating a persistent disk snapshot, this points to the
-      persistent disk that the snapshot was created from.
+      modifies. For operations related to creating a snapshot, this points to
+      the persistent disk that the snapshot was created from.
     user: [Output Only] User who requested the operation, for example:
       user@example.com.
     warnings: [Output Only] If warning messages are generated during
@@ -1000,10 +1036,7 @@ class Policy(_messages.Message):
   see the [IAM developer's guide](https://cloud.google.com/iam).
 
   Fields:
-    auditConfigs: Specifies audit logging configs for "data access". "data
-      access": generally refers to data reads/writes and admin reads. "admin
-      activity": generally refers to admin writes.  Note: `AuditConfig`
-      doesn't apply to "admin activity", which always enables audit logging.
+    auditConfigs: Specifies cloud audit logging configuration for this policy.
     bindings: Associates a list of `members` to a `role`. Multiple `bindings`
       must not be specified for the same `role`. `bindings` with no members
       will result in an error.

@@ -14,13 +14,29 @@
 
 """service-management operations wait command."""
 
-from googlecloudsdk.api_lib.service_management import base_classes
-from googlecloudsdk.api_lib.service_management import common_flags
 from googlecloudsdk.api_lib.service_management import services_util
 from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.service_management import arg_parsers
+from googlecloudsdk.command_lib.service_management import common_flags
 
 
-class Wait(base.Command, base_classes.BaseServiceManagementCommand):
+_DETAILED_HELP = {
+    'DESCRIPTION': """\
+        This command will block until an operation has been marked as complete.
+
+        Note that the `operations/` prefix of the operation name is optional
+        and may be omitted.
+        """,
+    'EXAMPLES': """\
+        To wait on an operation named `operations/serviceConfigs.my-service.1`
+        to complete, run:
+
+          $ {command} serviceConfigs.my-service.1
+        """,
+}
+
+
+class Wait(base.Command):
   """Waits for an operation to complete."""
 
   @staticmethod
@@ -44,12 +60,17 @@ class Wait(base.Command, base_classes.BaseServiceManagementCommand):
     Returns:
       If successful, the response from the operations.Get API call.
     """
-    op_name = services_util.ParseOperationName(args.operation)
+    messages = services_util.GetMessagesModule()
+    client = services_util.GetClientInstance()
 
-    request = self.services_messages.ServicemanagementOperationsGetRequest(
-        operationsId=op_name,
-    )
+    operation_id = arg_parsers.GetOperationIdFromArg(args.operation)
 
-    operation = self.services_client.operations.Get(request)
+    request = messages.ServicemanagementOperationsGetRequest(
+        operationsId=operation_id,)
+
+    operation = client.operations.Get(request)
 
     return services_util.ProcessOperationResult(operation, async=False)
+
+
+Wait.detailed_help = _DETAILED_HELP

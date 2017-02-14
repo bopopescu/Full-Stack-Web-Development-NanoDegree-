@@ -17,6 +17,7 @@
 import hashlib
 import os
 import shutil
+import subprocess
 import sys
 import textwrap
 
@@ -37,7 +38,6 @@ from googlecloudsdk.core.updater import snapshots
 from googlecloudsdk.core.updater import update_check
 from googlecloudsdk.core.util import files as file_utils
 from googlecloudsdk.core.util import platforms
-from googlecloudsdk.third_party.py27 import py27_subprocess as subprocess
 
 
 # These are components that used to exist, but we removed.  In order to prevent
@@ -302,8 +302,13 @@ class UpdateManager(object):
     if fast_mode_impossible:
       force_fast = False
 
-    cwd = console_attr.DecodeFromInput(os.path.realpath(os.getcwd()))
-    if not cwd.startswith(self.__sdk_root):
+    cwd = None
+    try:
+      cwd = console_attr.DecodeFromInput(os.path.realpath(os.getcwd()))
+    except OSError:
+      log.debug('Could not determine CWD, assuming detached directory not '
+                'under SDK root.')
+    if not (cwd and cwd.startswith(self.__sdk_root)):
       # Outside of the root entirely, this is always fine.
       return force_fast
 
@@ -813,8 +818,10 @@ version [{1}].  To clear your fixed version setting, run:
 
     md5dict2 = self._HashRcfiles(_SHELL_RCFILES)
     if md5dict1 != md5dict2:
-      self.__Write(log.status,
-                   '\nStart a new shell for the changes to take effect.\n')
+      self.__Write(
+          log.status,
+          console_io.FormatRequiredUserAction(
+              'Start a new shell for the changes to take effect.'))
     self.__Write(log.status, '\nUpdate done!\n')
 
     if not original_update_seed:
@@ -837,13 +844,6 @@ Please remove the following to avoid accidentally invoking these old tools:
 {0}
 
 """.format('\n'.join(bad_commands)))
-
-    if platforms.PythonVersion().IsPython26():
-      log.warn("""\
-You are running Python 2.6, which is no longer receiving security
-patches as of October 2013.  The Cloud SDK will stop supporting Python 2.6 on
-September 1, 2016.  Please update your Python installation to 2.7 to ensure
-compatibility with future Cloud SDK versions.""")
 
     return True
 

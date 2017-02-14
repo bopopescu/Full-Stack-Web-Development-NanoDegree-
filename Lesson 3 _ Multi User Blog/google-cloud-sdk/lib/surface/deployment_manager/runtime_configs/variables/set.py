@@ -50,6 +50,12 @@ class Set(base.CreateCommand):
 
             $ {command} --config-name my-config my-var "my-value" --fail-if-absent
 
+          It is possible to provide --is-text flag if the value contains only
+          text (UTF-8 encoded). This affects how the variable is transmitted on
+          the wire and requires less quota on the backend.
+
+            $ {command} --config-name my-config --is-text my-var "my value"
+
           If the variable's value parameter is not specified, the value will be
           read from standard input. This allows setting variables to large values
           or values that contain non-printable characters. The variable value
@@ -88,7 +94,18 @@ class Set(base.CreateCommand):
         default=None,
         help=(
             'The variable value. If absent, the value will be read from stdin. '
-            'The value is automatically base64-encoded.'))
+            'The value is automatically base64-encoded, '
+            'unless --is-text flag is set.'))
+
+    parser.add_argument('--is-text',
+                        default=False,
+                        required=False,
+                        action='store_true',
+                        help=('If True, send and store the value as text. Can '
+                              'be used if the value contains only text '
+                              '(UTF-8 encoded). This affects how the variable '
+                              'is transmitted on the wire and requires less '
+                              'quota on the backend.'))
 
   def Collection(self):
     """Returns the default collection path string.
@@ -142,15 +159,14 @@ class Set(base.CreateCommand):
 
     project = var_resource.projectsId
     config = var_resource.configsId
-    name = var_resource.Name()
 
     result = variable_client.Create(
         messages.RuntimeconfigProjectsConfigsVariablesCreateRequest(
-            projectsId=project,
-            configsId=config,
+            parent=util.ConfigPath(project, config),
             variable=messages.Variable(
-                name=util.VariablePath(project, config, name),
-                value=value
+                name=var_resource.RelativeName(),
+                value=value if not args.is_text else None,
+                text=value if args.is_text else None,
             )
         )
     )
@@ -162,19 +178,11 @@ class Set(base.CreateCommand):
     variable_client = util.VariableClient()
     messages = util.Messages()
 
-    project = var_resource.projectsId
-    config = var_resource.configsId
-    name = var_resource.Name()
-
     result = variable_client.Update(
-        messages.RuntimeconfigProjectsConfigsVariablesUpdateRequest(
-            projectsId=project,
-            configsId=config,
-            variablesId=name,
-            variable=messages.Variable(
-                name=util.VariablePath(project, config, name),
-                value=value
-            )
+        messages.Variable(
+            name=var_resource.RelativeName(),
+            value=value if not args.is_text else None,
+            text=value if args.is_text else None,
         )
     )
 

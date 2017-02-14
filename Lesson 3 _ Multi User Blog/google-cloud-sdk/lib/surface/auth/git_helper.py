@@ -28,6 +28,7 @@ be proceeded by leading spaces.
 """
 import os
 import re
+import subprocess
 import sys
 import textwrap
 
@@ -37,7 +38,6 @@ from googlecloudsdk.core import log
 from googlecloudsdk.core import properties
 from googlecloudsdk.core.credentials import store as c_store
 from googlecloudsdk.core.util import platforms
-from googlecloudsdk.third_party.py27 import py27_subprocess as subprocess
 
 from oauth2client import client
 
@@ -90,7 +90,6 @@ class GitHelper(base.Command):
       try:
         cred = c_store.Load(account)
         c_store.Refresh(cred)
-        c_store.Store(cred, account)
       except c_store.Error as e:
         sys.stderr.write(textwrap.dedent("""\
             ERROR: {error}

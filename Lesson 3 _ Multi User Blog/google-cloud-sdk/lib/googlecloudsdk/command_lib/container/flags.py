@@ -56,7 +56,7 @@ The default Kubernetes version are available using the following command.
   return parser.add_argument('--cluster-version', help=help_text)
 
 
-def AddClusterAutoscalingFlags(parser, exclusive_group=None, suppressed=False):
+def AddClusterAutoscalingFlags(parser, update_group=None, hidden=False):
   """Adds autoscaling related flags to parser.
 
   Autoscaling related flags are: --enable-autoscaling
@@ -64,40 +64,55 @@ def AddClusterAutoscalingFlags(parser, exclusive_group=None, suppressed=False):
 
   Args:
     parser: A given parser.
-    exclusive_group: An optional group of mutually exclusive flag options
+    update_group: An optional group of mutually exclusive flag options
         to which an --enable-autoscaling flag is added.
-    suppressed: If true, supress help text for added options.
+    hidden: If true, suppress help text for added options.
   """
 
-  hide_or = lambda x: argparse.SUPPRESS if suppressed else x
-
   group = parser.add_argument_group('Cluster autoscaling')
-  autoscaling_group = group if exclusive_group is None else exclusive_group
+  autoscaling_group = group if update_group is None else update_group
   autoscaling_group.add_argument(
       '--enable-autoscaling',
-      help=hide_or("""\
+      default=None if update_group else False,
+      help="""\
 Enables autoscaling for a node pool.
 
-Enables autoscaling in the node pool specified by --node-pool or the
-default node pool if --node-pool is not provided."""),
+Enables autoscaling in the node pool specified by --node-pool or
+the default node pool if --node-pool is not provided.""",
+      hidden=hidden,
       action='store_true')
+  # If we have an update group, add a custom inverted arg.
+  if update_group:
+    autoscaling_group.add_argument(
+        '--disable-autoscaling',
+        default=None,
+        help="""\
+Disables autoscaling for a node pool.
+
+Disables autoscaling in the node pool specified by --node-pool or
+the default node pool if --node-pool is not provided.""",
+        hidden=hidden,
+        action='store_false',
+        dest='enable_autoscaling')
   group.add_argument(
       '--max-nodes',
-      help=hide_or("""\
+      help="""\
 Maximum number of nodes in the node pool.
 
 Maximum number of nodes to which the node pool specified by --node-pool
 (or default node pool if unspecified) can scale. Ignored unless
---enable-autoscaling is also specified."""),
+--enable-autoscaling is also specified.""",
+      hidden=hidden,
       type=int)
   group.add_argument(
       '--min-nodes',
-      help=hide_or("""\
+      help="""\
 Minimum number of nodes in the node pool.
 
 Minimum number of nodes to which the node pool specified by --node-pool
 (or default node pool if unspecified) can scale. Ignored unless
---enable-autoscaling is also specified."""),
+--enable-autoscaling is also specified.""",
+      hidden=hidden,
       type=int)
 
 
@@ -118,6 +133,8 @@ https://cloud.google.com/compute/docs/disks/local-ssd for more information."""
 
 
 def AddZoneFlag(parser):
+  # TODO(b/33343238): Remove the short form of the zone flag.
+  # TODO(b/18105938): Add zone prompting
   """Adds the --zone flag to the parser."""
   parser.add_argument(
       '--zone', '-z',
@@ -217,3 +234,137 @@ See http://kubernetes.io/docs/user-guide/node-selection/ for examples."""
       '--node-labels',
       type=arg_parsers.ArgDict(),
       help=help_text)
+
+
+def AddPreemptibleFlag(parser, for_node_pool=False, suppressed=False):
+  """Adds a --preemptible flag to parser."""
+  if suppressed:
+    help_text = argparse.SUPPRESS
+  else:
+    if for_node_pool:
+      help_text = """\
+Create nodes using preemptible VM instances in the new nodepool.
+
+  $ {command} node-pool-1 --cluster=example-cluster --preemptible
+"""
+    else:
+      help_text = """\
+Create nodes using preemptible VM instances in the new cluster.
+
+  $ {command} example-cluster --preemptible
+"""
+    help_text += """
+New nodes, including ones created by resize or recreate, will use preemptible
+VM instances. See https://cloud.google.com/container-engine/docs/preemptible-vm
+for more information on how to use Preemptible VMs with Container Engine."""
+
+  parser.add_argument(
+      '--preemptible',
+      action='store_true',
+      help=help_text)
+
+
+def AddNodePoolNameArg(parser, help_text):
+  """Adds a name flag to the given parser.
+
+  Args:
+    parser: A given parser.
+    help_text: The help text describing the operation being performed.
+  """
+  parser.add_argument(
+      'name',
+      metavar='NAME',
+      help=help_text)
+
+
+def AddNodePoolClusterFlag(parser, help_text):
+  """Adds a --cluster flag to the parser.
+
+  Args:
+    parser: A given parser.
+    help_text: The help text describing usage of the --cluster flag being set.
+  """
+  parser.add_argument(
+      '--cluster',
+      help=help_text,
+      action=actions.StoreProperty(properties.VALUES.container.cluster))
+
+
+# TODO(b/33344111): Add test coverage. This flag was added preemptively, but it
+# currently has inadequate testing.
+def AddEnableAutoRepairFlag(parser, for_node_pool=False, suppressed=False):
+  """Adds a --enable-autorepair flag to parser."""
+  if suppressed:
+    help_text = argparse.SUPPRESS
+  else:
+    if for_node_pool:
+      help_text = """\
+Sets autorepair feature for a node-pool.
+
+  $ {command} node-pool-1 --cluster=example-cluster --enable-autorepair
+"""
+    else:
+      help_text = """\
+Sets autorepair feature for a cluster's default node-pool(s).
+
+  $ {command} example-cluster --enable-autorepair
+"""
+    help_text += """
+See https://cloud.google.com/container-engine/docs/node-managament for \
+more info."""
+
+  parser.add_argument(
+      '--enable-autorepair',
+      action='store_true',
+      default=None,
+      help=help_text)
+
+
+def AddEnableAutoUpgradeFlag(parser, for_node_pool=False, suppressed=False):
+  """Adds a --enable-autoupgrade flag to parser."""
+  if suppressed:
+    help_text = argparse.SUPPRESS
+  else:
+    if for_node_pool:
+      help_text = """\
+Sets autoupgrade feature for a node-pool.
+
+  $ {command} node-pool-1 --cluster=example-cluster --enable-autoupgrade
+"""
+    else:
+      help_text = """\
+Sets autoupgrade feature for a cluster's default node-pool(s).
+
+  $ {command} example-cluster --enable-autoupgrade
+"""
+    help_text += """
+See https://cloud.google.com/container-engine/docs/node-managament for more \
+info."""
+
+  parser.add_argument(
+      '--enable-autoupgrade',
+      action='store_true',
+      default=None,
+      help=help_text)
+
+
+def AddTagsFlag(parser, help_text):
+  """Adds a --tags to the given parser."""
+  parser.add_argument(
+      '--tags',
+      metavar='TAG',
+      type=arg_parsers.ArgList(min_length=1),
+      help=help_text)
+
+
+def AddServiceAccountFlag(parser, suppressed=False):
+  """Adds a --service-account to the given parser."""
+  help_text = argparse.SUPPRESS if suppressed else """\
+The Google Cloud Platform Service Account to be used by the node VMs. \
+If no Service Account is specified, the "default" service account is used.
+"""
+
+  parser.add_argument(
+      '--service-account',
+      help=help_text)
+

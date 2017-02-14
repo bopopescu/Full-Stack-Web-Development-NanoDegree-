@@ -20,12 +20,13 @@ from googlecloudsdk.command_lib.organizations import flags
 from googlecloudsdk.command_lib.organizations import orgs_base
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.ALPHA)
+@base.ReleaseTracks(
+    base.ReleaseTrack.GA, base.ReleaseTrack.BETA, base.ReleaseTrack.ALPHA)
 class SetIamPolicy(orgs_base.OrganizationCommand):
   """Set IAM policy for an organization.
 
-  Given an organization ID and a file that contains the JSON-encoded IAM policy,
-  this command will set the IAM policy for that organization.
+  Given an organization ID and a file encoded in JSON or YAML that contains the
+  IAM policy, this command will set the IAM policy for that organization.
   """
 
   detailed_help = {
@@ -43,12 +44,11 @@ class SetIamPolicy(orgs_base.OrganizationCommand):
   def Args(parser):
     flags.IdArg('whose IAM policy you want to set.').AddToParser(parser)
     parser.add_argument(
-        'policy_file',
-        help='JSON file containing the IAM policy.')
+        'policy_file', help='JSON or YAML file containing the IAM policy.')
 
   def Run(self, args):
     messages = self.OrganizationsMessages()
-    policy = iam_util.ParseJsonPolicyFile(args.policy_file, messages.Policy)
+    policy = iam_util.ParsePolicyFile(args.policy_file, messages.Policy)
     policy_request = (
         messages.CloudresourcemanagerOrganizationsSetIamPolicyRequest(
             organizationsId=args.id,

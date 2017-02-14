@@ -14,6 +14,8 @@
 """Command for creating images."""
 
 from googlecloudsdk.api_lib.compute import base_classes
+from googlecloudsdk.api_lib.compute import csek_utils
+from googlecloudsdk.api_lib.compute import image_utils
 from googlecloudsdk.api_lib.compute import utils
 from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
@@ -26,8 +28,12 @@ from googlecloudsdk.command_lib.compute.images import flags
 class Create(base_classes.BaseAsyncCreator):
   """Create Google Compute Engine images."""
 
-  @staticmethod
-  def Args(parser):
+  _ALLOW_RSA_ENCRYPTED_CSEK_KEYS = False
+
+  _GUEST_OS_FEATURES = image_utils.GUEST_OS_FEATURES
+
+  @classmethod
+  def Args(cls, parser):
     parser.add_argument(
         '--description',
         help=('An optional, textual description for the image being created.'))
@@ -57,10 +63,20 @@ class Create(base_classes.BaseAsyncCreator):
         type=arg_parsers.ArgList(),
         help='Comma-separated list of URIs to license resources.')
 
+    if cls._GUEST_OS_FEATURES:
+      parser.add_argument(
+          '--guest-os-features',
+          metavar='GUEST_OS_FEATURE',
+          type=arg_parsers.ArgList(element_type=lambda x: x.upper(),
+                                   choices=cls._GUEST_OS_FEATURES),
+          help=('One or more features supported by the OS in the image.'))
+
     parser.add_argument(
         'name',
         metavar='NAME',
         help='The name of the image to create.')
+
+    csek_utils.AddCsekKeyArgs(parser, resource_type='image')
 
   @property
   def service(self):
@@ -83,6 +99,15 @@ class Create(base_classes.BaseAsyncCreator):
         sourceType=self.messages.Image.SourceTypeValueValuesEnum.RAW,
         family=args.family)
 
+    csek_keys = csek_utils.CsekKeyStore.FromArgs(
+        args, self._ALLOW_RSA_ENCRYPTED_CSEK_KEYS)
+    if csek_keys:
+      image_ref = self.resources.Parse(args.name, collection='compute.images')
+      image.imageEncryptionKey = csek_utils.MaybeToMessage(
+          csek_keys.LookupKey(image_ref,
+                              raise_if_missing=args.require_csek_key_create),
+          self.compute_client.apitools_client)
+
     # Validate parameters.
     if args.source_disk_zone and not args.source_disk:
       raise exceptions.ToolException(
@@ -92,6 +117,13 @@ class Create(base_classes.BaseAsyncCreator):
     if args.source_disk and args.source_uri:
       raise exceptions.ConflictingArgumentsException(
           '--source-uri', '--source-disk')
+
+    if not (args.source_disk or args.source_uri):
+      raise exceptions.MinimumArgumentException(
+          ['--source-uri', '--source-disk'],
+          'Please specify either the source disk or the Google Cloud Storage '
+          'URI of the disk image.'
+      )
 
     # TODO(user): use resources.REGISTRY.Parse() for GCS URIs (b/30086260).
     if args.source_uri:
@@ -103,9 +135,21 @@ class Create(base_classes.BaseAsyncCreator):
           scope_lister=compute_flags.GetDefaultScopeLister(
               self.compute_client, self.project))
       image.sourceDisk = source_disk_ref.SelfLink()
+      image.sourceDiskEncryptionKey = csek_utils.MaybeLookupKeyMessage(
+          csek_keys, source_disk_ref, self.compute_client.apitools_client)
 
     if args.licenses:
       image.licenses = args.licenses
+
+    guest_os_features = getattr(args, 'guest_os_features', [])
+    if guest_os_features:
+      guest_os_feature_messages = []
+      for feature in guest_os_features:
+        gf_type = self.messages.GuestOsFeature.TypeValueValuesEnum(feature)
+        guest_os_feature = self.messages.GuestOsFeature()
+        guest_os_feature.type = gf_type
+        guest_os_feature_messages.append(guest_os_feature)
+      image.guestOsFeatures = guest_os_feature_messages
 
     request = self.messages.ComputeImagesInsertRequest(
         image=image,
@@ -114,12 +158,20 @@ class Create(base_classes.BaseAsyncCreator):
     return [request]
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.ALPHA)
+@base.ReleaseTracks(base.ReleaseTrack.BETA)
 class CreateBeta(Create):
 
-  @staticmethod
-  def Args(parser):
-    Create.Args(parser)
+  # Used in CreateRequests. We only want to allow RSA key wrapping in
+  # alpha/beta, *not* GA.
+  _ALLOW_RSA_ENCRYPTED_CSEK_KEYS = True
+
+  _GUEST_OS_FEATURES = image_utils.GUEST_OS_FEATURES_BETA
+
+
+@base.ReleaseTracks(base.ReleaseTrack.ALPHA)
+class CreateAlpha(CreateBeta):
+
+  _GUEST_OS_FEATURES = image_utils.GUEST_OS_FEATURES_ALPHA
 
 
 Create.detailed_help = {
@@ -142,3 +194,4 @@ Create.detailed_help = {
 }
 
 CreateBeta.detailed_help = Create.detailed_help
+CreateAlpha.detailed_help = Create.detailed_help

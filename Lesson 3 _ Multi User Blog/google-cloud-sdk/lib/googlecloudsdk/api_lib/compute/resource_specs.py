@@ -12,15 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Annotates the resource types with extra information."""
+import collections
 import httplib
 
 from apitools.base.protorpclite import messages
 
-from googlecloudsdk.api_lib.compute import constants
 from googlecloudsdk.api_lib.compute import instance_utils
 from googlecloudsdk.api_lib.compute import path_simplifier
 from googlecloudsdk.api_lib.compute import property_selector
-from googlecloudsdk.third_party.py27 import py27_collections as collections
 
 
 def _FirewallRulesToCell(firewall):
@@ -60,6 +59,15 @@ def _FirewallSourceTagsToCell(firewall):
 def _FirewallTargetTagsToCell(firewall):
   """Comma-joins the target tags of the given firewall rule."""
   return ','.join(firewall.get('targetTags', []))
+
+
+def _ForwardingRuleTarget(forwarding_rule):
+  """Gets the API-level target or backend-service of the given rule."""
+  backend_service = forwarding_rule.get('backendService', None)
+  if backend_service is not None:
+    return backend_service
+  else:
+    return forwarding_rule.get('target', None)
 
 
 def _StatusToCell(zone_or_region):
@@ -235,16 +243,6 @@ def _MembersToCell(group):
   return '0'
 
 
-def _AliasToCell(image):
-  """Returns the alias name for a given image."""
-  project = _ProjectToCell(image)
-  name = image.get('name')
-  aliases = [alias for alias, value in constants.IMAGE_ALIASES.items()
-             if name.startswith(value.name_prefix)
-             and value.project == project]
-  return ', '.join(aliases)
-
-
 def _BackendsToCell(backend_service):
   """Comma-joins the names of the backend services."""
   return ','.join(backend.get('group')
@@ -261,6 +259,8 @@ def _RoutesNextHopToCell(route):
     return route.get('nextHopIp')
   elif route.get('nextHopVpnTunnel'):
     return path_simplifier.ScopedSuffix(route.get('nextHopVpnTunnel'))
+  elif route.get('nextHopPeering'):
+    return route.get('nextHopPeering')
   else:
     return ''
 
@@ -434,7 +434,7 @@ _SPECS_V1 = {
             ('REGION', 'region'),
             ('IP_ADDRESS', 'IPAddress'),
             ('IP_PROTOCOL', 'IPProtocol'),
-            ('TARGET', 'target'),
+            ('TARGET', _ForwardingRuleTarget),
         ],
         transformations=[
             ('region', path_simplifier.Name),
@@ -527,7 +527,6 @@ _SPECS_V1 = {
         ],
         transformations=[
             ('zone', path_simplifier.Name),
-            ('network', path_simplifier.Name),
             ('size', str),
         ],
         editables=None,
@@ -559,8 +558,9 @@ _SPECS_V1 = {
             ('ZONE', 'zone'),
             ('MACHINE_TYPE', _MachineTypeNameToCell),
             ('PREEMPTIBLE', 'scheduling.preemptible'),
-            ('INTERNAL_IP', 'networkInterfaces[0].networkIP'),
-            ('EXTERNAL_IP', 'networkInterfaces[0].accessConfigs[0].natIP'),
+            ('INTERNAL_IP', 'networkInterfaces[].networkIP.notnull().list()'),
+            ('EXTERNAL_IP',
+             'networkInterfaces[].accessConfigs[0].natIP.notnull().list()'),
             ('STATUS', 'status'),
         ],
         transformations=[
@@ -649,6 +649,28 @@ _SPECS_V1 = {
             ('targetLink', path_simplifier.ScopedSuffix),
         ],
         editables=None,
+    ),
+
+    'regionBackendServices': _InternalSpec(
+        message_class_name='BackendService',
+        table_cols=[
+            ('NAME', 'name'),
+            ('BACKENDS', _BackendsToCell),
+            ('PROTOCOL', 'protocol'),
+        ],
+        transformations=[
+            ('backends[].group', path_simplifier.ScopedSuffix),
+        ],
+        editables=[
+            'backends',
+            'description',
+            'enableCDN',
+            'healthChecks',
+            'port',
+            'portName',
+            'protocol',
+            'timeoutSec',
+        ],
     ),
 
     'regions': _InternalSpec(
@@ -897,29 +919,7 @@ _SPECS_V1 = {
 
 
 _SPECS_BETA = _SPECS_V1.copy()
-_SPECS_BETA['regionBackendServices'] = _InternalSpec(
-    message_class_name='BackendService',
-    table_cols=[
-        ('NAME', 'name'),
-        ('BACKENDS', _BackendsToCell),
-        ('PROTOCOL', 'protocol'),
-    ],
-    transformations=[
-        ('backends[].group', path_simplifier.ScopedSuffix),
-    ],
-    editables=[
-        'backends',
-        'description',
-        'enableCDN',
-        'healthChecks',
-        'port',
-        'portName',
-        'protocol',
-        'timeoutSec',
-    ],)
-
-_SPECS_ALPHA = _SPECS_BETA.copy()
-_SPECS_ALPHA['backendBuckets'] = _InternalSpec(
+_SPECS_BETA['backendBuckets'] = _InternalSpec(
     message_class_name='BackendBucket',
     table_cols=[
         ('NAME', 'name'),
@@ -934,41 +934,7 @@ _SPECS_ALPHA['backendBuckets'] = _InternalSpec(
         'description',
         'enableCdn',
     ])
-_SPECS_ALPHA['instanceGroups'] = _InternalSpec(
-    message_class_name='InstanceGroup',
-    table_cols=[
-        ('NAME', 'name'),
-        ('LOCATION', _LocationName),
-        ('SCOPE', _LocationScopeType),
-        ('NETWORK', 'network'),
-        ('MANAGED', 'isManaged'),
-        ('INSTANCES', 'size'),
-    ],
-    transformations=[
-        ('network', path_simplifier.Name),
-        ('size', str),
-    ],
-    editables=None,
-)
-_SPECS_ALPHA['instanceGroupManagers'] = _InternalSpec(
-    message_class_name='InstanceGroupManager',
-    table_cols=[
-        ('NAME', 'name'),
-        ('LOCATION', _LocationName),
-        ('SCOPE', _LocationScopeType),
-        ('BASE_INSTANCE_NAME', 'baseInstanceName'),
-        ('SIZE', 'size'),
-        ('TARGET_SIZE', 'targetSize'),
-        ('INSTANCE_TEMPLATE', 'instanceTemplate'),
-        ('AUTOSCALED', 'autoscaled'),
-    ],
-    transformations=[
-        ('instanceGroup', path_simplifier.Name),
-        ('instanceTemplate', path_simplifier.Name),
-    ],
-    editables=None,
-    )
-_SPECS_ALPHA['backendServices'] = _InternalSpec(
+_SPECS_BETA['backendServices'] = _InternalSpec(
     message_class_name='BackendService',
     table_cols=[
         ('NAME', 'name'),
@@ -993,6 +959,82 @@ _SPECS_ALPHA['backendServices'] = _InternalSpec(
         'protocol',
         'timeoutSec',
     ],)
+_SPECS_BETA['urlMaps'] = _InternalSpec(
+    message_class_name='UrlMap',
+    table_cols=[
+        ('NAME', 'name'),
+        ('DEFAULT_SERVICE', 'defaultService'),
+    ],
+    transformations=[
+        ('defaultService', path_simplifier.TypeSuffix),
+        ('pathMatchers[].defaultService', path_simplifier.TypeSuffix),
+        ('pathMatchers[].pathRules[].service', path_simplifier.TypeSuffix),
+        ('tests[].service', path_simplifier.TypeSuffix),
+    ],
+    editables=[
+        'defaultService',
+        'description',
+        'hostRules',
+        'pathMatchers',
+        'tests',
+    ])
+
+
+_SPECS_ALPHA = _SPECS_BETA.copy()
+_SPECS_ALPHA['hosts'] = _InternalSpec(
+    message_class_name='Host',
+    table_cols=[
+        ('NAME', 'name'),
+        ('REQUEST_PATH', 'requestPath'),
+    ],
+    transformations=[],
+    editables=None)
+_SPECS_ALPHA['hostTypes'] = _InternalSpec(
+    message_class_name='HostType',
+    table_cols=[
+        ('NAME', 'name'),
+        ('ZONE', 'zone'),
+        ('DEPRECATED', 'deprecated'),
+        ('CPUs', 'guestCpus'),
+        ('MEMORY(MB)', 'memoryMb'),
+        ('LOCAL SSD(GB)', 'localSsdGb'),
+    ],
+    transformations=[],
+    editables=None)
+
+_SPECS_ALPHA['instanceGroups'] = _InternalSpec(
+    message_class_name='InstanceGroup',
+    table_cols=[
+        ('NAME', 'name'),
+        ('LOCATION', _LocationName),
+        ('SCOPE', _LocationScopeType),
+        ('NETWORK', 'network'),
+        ('MANAGED', 'isManaged'),
+        ('INSTANCES', 'size'),
+    ],
+    transformations=[
+        ('size', str),
+    ],
+    editables=None,
+)
+_SPECS_ALPHA['instanceGroupManagers'] = _InternalSpec(
+    message_class_name='InstanceGroupManager',
+    table_cols=[
+        ('NAME', 'name'),
+        ('LOCATION', _LocationName),
+        ('SCOPE', _LocationScopeType),
+        ('BASE_INSTANCE_NAME', 'baseInstanceName'),
+        ('SIZE', 'size'),
+        ('TARGET_SIZE', 'targetSize'),
+        ('INSTANCE_TEMPLATE', 'instanceTemplate'),
+        ('AUTOSCALED', 'autoscaled'),
+    ],
+    transformations=[
+        ('instanceGroup', path_simplifier.Name),
+        ('instanceTemplate', path_simplifier.Name),
+    ],
+    editables=None,
+    )
 _SPECS_ALPHA['urlMaps'] = _InternalSpec(
     message_class_name='UrlMap',
     table_cols=[
@@ -1012,6 +1054,17 @@ _SPECS_ALPHA['urlMaps'] = _InternalSpec(
         'pathMatchers',
         'tests',
     ])
+_SPECS_ALPHA['peerings'] = _InternalSpec(
+    message_class_name='NetworkPeering',
+    table_cols=[
+        ('NAME', 'name'),
+        ('network', 'network'),
+        ('autoCreateRoutes', 'autoCreateRoutes'),
+        ('state', 'state'),
+        ],
+    transformations=None,
+    editables=None,
+    )
 
 
 def _GetSpecsForVersion(api_version):

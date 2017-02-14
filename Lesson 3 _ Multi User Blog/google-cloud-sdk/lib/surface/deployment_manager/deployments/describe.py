@@ -19,7 +19,8 @@ from apitools.base.py import exceptions as apitools_exceptions
 from googlecloudsdk.api_lib.deployment_manager import dm_v2_util
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
-from googlecloudsdk.core import properties
+from googlecloudsdk.command_lib.deployment_manager import dm_base
+from googlecloudsdk.command_lib.deployment_manager import flags
 
 
 class _Results(object):
@@ -55,7 +56,7 @@ class Describe(base.DescribeCommand):
           on the command line after this command. Positional arguments are
           allowed.
     """
-    parser.add_argument('deployment_name', help='Deployment name.')
+    flags.AddDeploymentNameFlag(parser)
 
   def Collection(self):
     return 'deploymentmanager.deployments_and_resources_and_outputs'
@@ -78,23 +79,17 @@ class Describe(base.DescribeCommand):
       HttpException: An http error response was received while executing api
           request.
     """
-    client = self.context['deploymentmanager-client']
-    messages = self.context['deploymentmanager-messages']
-    project = properties.VALUES.core.project.Get(required=True)
-
     try:
-      deployment = client.deployments.Get(
-          messages.DeploymentmanagerDeploymentsGetRequest(
-              project=project, deployment=args.deployment_name))
+      deployment = dm_base.GetClient().deployments.Get(
+          dm_base.GetMessages().DeploymentmanagerDeploymentsGetRequest(
+              project=dm_base.GetProject(), deployment=args.deployment_name))
     except apitools_exceptions.HttpError as error:
       raise exceptions.HttpException(error, dm_v2_util.HTTP_ERROR_FORMAT)
 
-    # Get resources belonging to the deployment to display
-    project = properties.VALUES.core.project.Get(required=True)
     try:
-      response = client.resources.List(
-          messages.DeploymentmanagerResourcesListRequest(
-              project=project, deployment=deployment.name))
+      response = dm_base.GetClient().resources.List(
+          dm_base.GetMessages().DeploymentmanagerResourcesListRequest(
+              project=dm_base.GetProject(), deployment=deployment.name))
       resources = response.resources
     except apitools_exceptions.HttpError:
       # Couldn't get resources, skip adding them to the table.
@@ -106,13 +101,15 @@ class Describe(base.DescribeCommand):
     manifest = dm_v2_util.ExtractManifestName(deployment)
 
     if manifest:
-      manifest_response = client.manifests.Get(
-          messages.DeploymentmanagerManifestsGetRequest(
-              project=project,
+      manifest_response = dm_base.GetClient().manifests.Get(
+          dm_base.GetMessages().DeploymentmanagerManifestsGetRequest(
+              project=dm_base.GetProject(),
               deployment=args.deployment_name,
               manifest=manifest,
           )
       )
-      outputs = dm_v2_util.FlattenLayoutOutputs(manifest_response.layout)
+      # We might be lacking a layout if the manifest failed expansion.
+      if manifest_response.layout:
+        outputs = dm_v2_util.FlattenLayoutOutputs(manifest_response.layout)
 
     return _Results(deployment, resources, outputs)

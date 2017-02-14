@@ -86,6 +86,32 @@ class MissingApplicationError(exceptions.Error):
   def __str__(self):
     return (
         'The current Google Cloud project [{0}] does not contain an App Engine '
-        'application. Use `gcloud beta app create` to initialize an App Engine '
+        'application. Use `gcloud app create` to initialize an App Engine '
         'application within the project.').format(self.project)
+
+
+class MissingInstanceError(exceptions.Error):
+  """An instance required for the operation does not exist."""
+
+  def __init__(self, instance):
+    super(MissingInstanceError, self).__init__(
+        'Instance [{}] does not exist.'.format(instance))
+
+
+class MissingVersionError(exceptions.Error):
+  """A version required for the operation does not exist."""
+
+  def __init__(self, version):
+    super(MissingVersionError, self).__init__(
+        'Version [{}] does not exist.'.format(version))
+
+
+class InvalidInstanceTypeError(exceptions.Error):
+  """Instance has the wrong environment."""
+
+  def __init__(self, environment, message=None):
+    msg = '{} instances do not support this operation.'.format(environment)
+    if message:
+      msg += '  ' + message
+    super(InvalidInstanceTypeError, self).__init__(msg)
 

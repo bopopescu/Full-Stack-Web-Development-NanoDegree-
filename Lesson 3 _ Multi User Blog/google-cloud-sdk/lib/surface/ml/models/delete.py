@@ -12,16 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ml models delete command."""
-
 from googlecloudsdk.api_lib.ml import models
 from googlecloudsdk.api_lib.ml import operations
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.ml import flags
-from googlecloudsdk.core import apis
-from googlecloudsdk.core.console import progress_tracker
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
 class DeleteBeta(base.DeleteCommand):
   """Delete an existing Cloud ML model."""
 
@@ -43,9 +39,8 @@ class DeleteBeta(base.DeleteCommand):
     Returns:
       Some value that we want to have printed later.
     """
-    op = models.Delete(args.model)
-    client = apis.GetClientInstance('ml', 'v1beta1')
+    client = models.ModelsClient()
+    op = client.Delete(args.model)
 
-    with progress_tracker.ProgressTracker('Deleting model...'):
-      operations.WaitForOperation(client.projects_operations, op)
-    return op.response
+    return operations.OperationsClient().WaitForOperation(
+        op, message='Deleting model [{}]'.format(args.model)).response

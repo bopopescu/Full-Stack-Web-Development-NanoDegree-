@@ -14,12 +14,28 @@
 
 """Command to get information about a principal's permissions on a service."""
 
-from googlecloudsdk.api_lib.service_management import base_classes
-from googlecloudsdk.api_lib.service_management import common_flags
+from googlecloudsdk.api_lib.service_management import services_util
 from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.service_management import arg_parsers
+from googlecloudsdk.command_lib.service_management import common_flags
 
 
-class CheckIamPolicy(base.Command, base_classes.BaseServiceManagementCommand):
+_DETAILED_HELP = {
+    'DESCRIPTION': """\
+        This command lists the permissions that the current authenticated
+        gcloud user has for a service. For example, if the authenticated user is
+        able to delete the service, `servicemanagement.services.delete` will
+        be among the returned permissions.
+        """,
+    'EXAMPLES': """\
+        To check the permissions for the currently authenticated gcloud, run:
+
+          $ {command} my_produced_service_name
+        """,
+}
+
+
+class CheckIamPolicy(base.Command):
   """Returns information about a member's permissions on a service."""
 
   @staticmethod
@@ -32,7 +48,7 @@ class CheckIamPolicy(base.Command, base_classes.BaseServiceManagementCommand):
           allowed.
     """
 
-    service_flag = common_flags.service_flag(
+    service_flag = common_flags.producer_service_flag(
         suffix='for which to check the IAM policy')
     service_flag.AddToParser(parser)
 
@@ -46,14 +62,24 @@ class CheckIamPolicy(base.Command, base_classes.BaseServiceManagementCommand):
     Returns:
       The response from the access API call.
     """
+    messages = services_util.GetMessagesModule()
+    client = services_util.GetClientInstance()
+    all_iam_permissions = services_util.ALL_IAM_PERMISSIONS
+
     # Shorten the query request name for better readability
-    query_request = (self.services_messages
-                     .ServicemanagementServicesTestIamPermissionsRequest)
+    query_request = messages.ServicemanagementServicesTestIamPermissionsRequest
+
+    service = arg_parsers.GetServiceNameFromArg(args.service)
 
     request = query_request(
-        servicesId=args.service,
-        testIamPermissionsRequest=(self.services_messages.
-                                   TestIamPermissionsRequest(
-                                       permissions=self.all_iam_permissions)))
+        servicesId=service,
+        testIamPermissionsRequest=messages.TestIamPermissionsRequest(
+            permissions=all_iam_permissions))
 
-    return self.services_client.services.TestIamPermissions(request)
+    return client.services.TestIamPermissions(request)
+
+  def Collection(self):
+    return services_util.SERVICES_COLLECTION
+
+
+CheckIamPolicy.detailed_help = _DETAILED_HELP

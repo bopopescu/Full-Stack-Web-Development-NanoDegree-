@@ -15,9 +15,10 @@
 
 from apitools.base.py import list_pager
 
+from googlecloudsdk.api_lib.cloudbuild import cloudbuild_util
 from googlecloudsdk.calliope import base
-from googlecloudsdk.core import apis as core_apis
 from googlecloudsdk.core import properties
+from googlecloudsdk.core import resources
 
 
 class List(base.ListCommand):
@@ -40,6 +41,20 @@ class List(base.ListCommand):
   def Collection(self):
     return 'cloudbuild.projects.builds'
 
+  def GetUriFunc(self):
+    registry = resources.REGISTRY.Clone()
+
+    def _BuildToURI(build):
+      build_ref = registry.Parse(
+          None,
+          params={
+              'project': build.projectId,
+              'id': build.id,
+          },
+          collection=self.Collection())
+      return build_ref.SelfLink()
+    return _BuildToURI
+
   # TODO(user,b/29048700): Until resolution of this bug, the error message
   # printed by gcloud (for 404s, eg) will be really terrible.
   def Run(self, args):
@@ -53,8 +68,8 @@ class List(base.ListCommand):
       Some value that we want to have printed later.
     """
 
-    client = core_apis.GetClientInstance('cloudbuild', 'v1')
-    messages = core_apis.GetMessagesModule('cloudbuild', 'v1')
+    client = cloudbuild_util.GetClientInstance()
+    messages = cloudbuild_util.GetMessagesModule()
 
     ongoing_filter = None
     if args.ongoing:
@@ -67,4 +82,5 @@ class List(base.ListCommand):
             projectId=properties.VALUES.core.project.Get(),
             filter=ongoing_filter),
         field='builds',
+        batch_size=args.page_size,
         batch_size_attribute='pageSize')

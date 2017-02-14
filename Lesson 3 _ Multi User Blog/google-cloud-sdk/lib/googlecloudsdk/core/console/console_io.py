@@ -14,8 +14,10 @@
 
 """General console printing utilities used by the Cloud SDK."""
 
+import contextlib
 import os
 import re
+import subprocess
 import sys
 import textwrap
 
@@ -25,7 +27,6 @@ from googlecloudsdk.core import properties
 from googlecloudsdk.core.console import console_attr
 from googlecloudsdk.core.console import console_pager
 from googlecloudsdk.core.util import files
-from googlecloudsdk.third_party.py27 import py27_subprocess as subprocess
 
 FLOAT_COMPARE_EPSILON = 1e-6
 
@@ -48,13 +49,18 @@ class UnattendedPromptError(Error):
 class OperationCancelledError(Error):
   """An exception for when a prompt cannot be answered."""
 
-  def __init__(self):
-    super(OperationCancelledError, self).__init__('Operation cancelled.')
+  DEFAULT_MESSAGE = 'Aborted by user.'
+
+  def __init__(self, message=None):
+    super(OperationCancelledError, self).__init__(
+        message or self.DEFAULT_MESSAGE)
 
 
 TEXTWRAP = textwrap.TextWrapper(replace_whitespace=False,
                                 drop_whitespace=False,
                                 break_on_hyphens=False)
+  # All wrapping is done by this single global wrapper. If you have different
+  # wrapping needs, consider the _NarrowWrap context manager, below.
 
 
 def _DoWrap(message):
@@ -68,6 +74,14 @@ def _DoWrap(message):
     str, The wrapped message.
   """
   return '\n'.join([TEXTWRAP.fill(line) for line in message.splitlines()])
+
+
+@contextlib.contextmanager
+def _NarrowWrap(narrow_by):
+  """Temporarily narrows the global wrapper."""
+  TEXTWRAP.width -= narrow_by
+  yield TEXTWRAP
+  TEXTWRAP.width += narrow_by
 
 
 def _RawInput(prompt=None):
@@ -142,7 +156,8 @@ def CanPrompt():
 
 
 def PromptContinue(message=None, prompt_string=None, default=True,
-                   throw_if_unattended=False, cancel_on_no=False):
+                   throw_if_unattended=False, cancel_on_no=False,
+                   cancel_string=None):
   """Prompts the user a yes or no question and asks if they want to continue.
 
   Args:
@@ -157,6 +172,8 @@ def PromptContinue(message=None, prompt_string=None, default=True,
       cancel the entire operation.  Useful if you know you don't want to
       continue doing anything and don't want to have to raise your own
       exception.
+    cancel_string: str, An alternate error to display on No. If None, it
+      defaults to 'Aborted by user.'.
 
   Raises:
     UnattendedPromptError: If there is no input to consume and this is not
@@ -200,10 +217,10 @@ def PromptContinue(message=None, prompt_string=None, default=True,
         else:
           sys.stderr.write('\n')
           return default
-      elif answer.lower() in ['y', 'yes']:
+      elif answer.strip().lower() in ['y', 'yes']:
         sys.stderr.write('\n')
         return True
-      elif answer.lower() in ['n', 'no']:
+      elif answer.strip().lower() in ['n', 'no']:
         sys.stderr.write('\n')
         return False
       else:
@@ -211,7 +228,7 @@ def PromptContinue(message=None, prompt_string=None, default=True,
 
   answer = GetAnswer()
   if not answer and cancel_on_no:
-    raise OperationCancelledError()
+    raise OperationCancelledError(cancel_string)
   return answer
 
 
@@ -342,7 +359,7 @@ PROMPT_OPTIONS_OVERFLOW = 50
 
 def PromptChoice(options, default=None, message=None,
                  prompt_string=None, allow_freeform=False,
-                 freeform_suggester=None):
+                 freeform_suggester=None, cancel_option=False):
   """Prompt the user to select a choice from a list of items.
 
   Args:
@@ -360,10 +377,13 @@ def PromptChoice(options, default=None, message=None,
       GetSuggestion which is used to detect if an answer which is not present
       in the options list is a likely typo, and to provide a suggestion
       accordingly.
+    cancel_option: bool, A flag indicating whether an option to cancel the
+      operation should be added to the end of the list of choices.
 
   Raises:
     ValueError: If no options are given or if the default is not in the range of
       available options.
+    OperationCancelledError: If a `cancel` option is selected by user.
 
   Returns:
     The index of the item in the list that was chosen, or the default if prompts
@@ -371,6 +391,7 @@ def PromptChoice(options, default=None, message=None,
   """
   if not options:
     raise ValueError('You must provide at least one option.')
+  options = options + ['cancel'] if cancel_option else options
   maximum = len(options)
   if default is not None and not 0 <= default < maximum:
     raise ValueError(
@@ -411,16 +432,21 @@ def PromptChoice(options, default=None, message=None,
   while True:
     answer = _RawInput()
     if answer is None or (answer is '' and default is not None):
-      # Return default if we failed to read from stdin
-      # Return default if the user hit enter and there is a valid default
+      # Return default if we failed to read from stdin.
+      # Return default if the user hit enter and there is a valid default,
+      # or raise OperationCancelledError if default is the cancel option.
       # Prompt again otherwise
       sys.stderr.write('\n')
+      if cancel_option and default == maximum - 1:
+        raise OperationCancelledError()
       return default
     if answer == 'list':
       _PrintOptions(options)
       _PrintPrompt()
       continue
     num_choice = _ParseAnswer(answer, options, allow_freeform)
+    if cancel_option and num_choice == maximum:
+      raise OperationCancelledError()
     if num_choice is not None and num_choice >= 1 and num_choice <= maximum:
       sys.stderr.write('\n')
       return num_choice - 1
@@ -428,7 +454,9 @@ def PromptChoice(options, default=None, message=None,
     # Arriving here means that there is no choice matching the answer that
     # was given. We now will provide a suggestion, if one exists.
     if allow_freeform and freeform_suggester:
-      suggestion = _SuggestFreeformAnswer(freeform_suggester, answer, options)
+      suggestion = _SuggestFreeformAnswer(freeform_suggester,
+                                          answer,
+                                          options)
       if suggestion is not None:
         sys.stderr.write('[{answer}] not in list. Did you mean [{suggestion}]?'
                          .format(answer=answer, suggestion=suggestion))
@@ -474,6 +502,27 @@ def LazyFormat(s, **kwargs):
         start += len(value)
   # {{unknown}} => {unknown}
   return re.sub(r'{({\w+})}', r'\1', s)
+
+
+def FormatRequiredUserAction(s):
+  """Formats an action a user must initiate to complete a command.
+
+  Some actions can't be prompted or initiated by gcloud itself, but they must
+  be completed to accomplish the task requested of gcloud; the canonical example
+  is that after installation or update, the user must restart their shell for
+  all aspects of the update to take effect. Unlike most console output, such
+  instructions need to be highlighted in some way. Using this function ensures
+  that all such instances are highlighted the *same* way.
+
+  Args:
+    s: str, The message to format. It shouldn't begin or end with newlines.
+
+  Returns:
+    str, The formatted message. This should be printed starting on its own
+      line, and followed by a newline.
+  """
+  with _NarrowWrap(4) as wrapper:
+    return '\n==> ' + '\n==> '.join(wrapper.wrap(s)) + '\n'
 
 
 class ProgressBar(object):
@@ -552,10 +601,18 @@ class ProgressBar(object):
     self._total_ticks = total_ticks
     self._first = first
     self._last = last
-    attr = console_attr.ConsoleAttr()
+    attr = console_attr.ConsoleAttr(out=stream)
     self._box = attr.GetBoxLineCharacters()
     self._redraw = (self._box.d_dr != self._box.d_vr or
                     self._box.d_dl != self._box.d_vl)
+    # If not interactive, we can't use carriage returns, so treat every progress
+    # bar like it is independent, do not try to merge and redraw them. We only
+    # need to do this if it was going to attempt to redraw them in the first
+    # place (there is no redraw if the character set does not support different
+    # characters for the corners).
+    if self._redraw and not IsInteractive(error=True):
+      self._first = True
+      self._last = True
 
     max_label_width = self._total_ticks - 4
     if len(label) > max_label_width:

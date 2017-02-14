@@ -13,23 +13,13 @@
 # limitations under the License.
 """Command for listing instances in instance groups."""
 from googlecloudsdk.api_lib.compute import instance_groups_utils
-from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.compute import flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
 from googlecloudsdk.command_lib.compute.instance_groups import flags as instance_groups_flags
 from googlecloudsdk.core import properties
 
 
-@base.ReleaseTracks(base.ReleaseTrack.GA)
-class ListInstances(instance_groups_utils.InstanceGroupListInstances):
-
-  @staticmethod
-  def Args(parser):
-    instance_groups_flags.ZONAL_INSTANCE_GROUP_ARG.AddArgument(parser)
-    flags.AddRegexArg(parser)
-
-
-@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.ALPHA)
-class ListInstancesBeta(instance_groups_utils.InstanceGroupListInstancesBase):
+class ListInstances(instance_groups_utils.InstanceGroupListInstancesBase):
   """List Google Compute Engine instances present in instance group."""
 
   @staticmethod
@@ -43,7 +33,7 @@ class ListInstancesBeta(instance_groups_utils.InstanceGroupListInstancesBase):
     group_ref = (
         instance_groups_flags.MULTISCOPE_INSTANCE_GROUP_ARG.ResolveAsResource(
             args, self.resources,
-            default_scope=flags.ScopeEnum.ZONE,
+            default_scope=compute_scope.ScopeEnum.ZONE,
             scope_lister=flags.GetDefaultScopeLister(
                 self.compute_client, project)))
 

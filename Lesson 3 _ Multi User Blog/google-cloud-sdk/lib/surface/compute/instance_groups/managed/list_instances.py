@@ -19,16 +19,18 @@ from googlecloudsdk.api_lib.compute import instance_groups_utils
 from googlecloudsdk.api_lib.compute import request_helper
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.compute import flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
 from googlecloudsdk.command_lib.compute.instance_groups import flags as instance_groups_flags
 
 
-@base.ReleaseTracks(base.ReleaseTrack.GA)
+@base.ReleaseTracks(base.ReleaseTrack.GA, base.ReleaseTrack.BETA)
 class ListInstances(instance_groups_utils.InstanceGroupListInstancesBase):
   """List Google Compute Engine instances present in managed instance group."""
 
   @staticmethod
   def Args(parser):
-    instance_groups_flags.ZONAL_INSTANCE_GROUP_ARG.AddArgument(parser)
+    instance_groups_flags.MULTISCOPE_INSTANCE_GROUP_MANAGER_ARG.AddArgument(
+        parser)
 
   @property
   def service(self):
@@ -48,69 +50,10 @@ class ListInstances(instance_groups_utils.InstanceGroupListInstancesBase):
 
   def CreateGroupReference(self, args):
     return (
-        instance_groups_flags.ZONAL_INSTANCE_GROUP_MANAGER_ARG
-        .ResolveAsResource(
-            args, self.resources,
-            scope_lister=flags.GetDefaultScopeLister(
-                self.compute_client, self.project)))
-
-  def GetResources(self, args):
-    """Retrieves response with instance in the instance group."""
-    group_ref = group_ref = (
-        instance_groups_flags.ZONAL_INSTANCE_GROUP_MANAGER_ARG
-        .ResolveAsResource(
-            args, self.resources,
-            scope_lister=flags.GetDefaultScopeLister(
-                self.compute_client, self.project)))
-
-    request = self.service.GetRequestType(self.method)(
-        instanceGroupManager=group_ref.Name(),
-        zone=group_ref.zone,
-        project=group_ref.project)
-
-    errors = []
-    results = list(request_helper.MakeRequests(
-        requests=[(self.service, self.method, request)],
-        http=self.http,
-        batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None))
-
-    return results, errors
-
-  def Format(self, args):
-    return """\
-        table(instance.basename():label=NAME,
-              instanceStatus:label=STATUS,
-              currentAction:label=ACTION,
-              lastAttempt.errors.errors.map().format(
-                "Error {0}: {1}", code, message).list(separator=", ")
-                :label=LAST_ERROR
-        )"""
-
-  detailed_help = {
-      'brief': 'List instances present in the managed instance group',
-      'DESCRIPTION': """\
-          *{command}* list instances in a managed instance group.
-          """,
-  }
-
-
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
-class ListInstancesBeta(ListInstances):
-  """List Google Compute Engine instances present in managed instance group."""
-
-  @staticmethod
-  def Args(parser):
-    instance_groups_flags.MULTISCOPE_INSTANCE_GROUP_MANAGER_ARG.AddArgument(
-        parser)
-
-  def CreateGroupReference(self, args):
-    return (
         instance_groups_flags.MULTISCOPE_INSTANCE_GROUP_MANAGER_ARG
         .ResolveAsResource(
             args, self.resources,
-            default_scope=flags.ScopeEnum.ZONE,
+            default_scope=compute_scope.ScopeEnum.ZONE,
             scope_lister=flags.GetDefaultScopeLister(
                 self.compute_client, self.project)))
 
@@ -136,8 +79,7 @@ class ListInstancesBeta(ListInstances):
         requests=[(service, self.method, request)],
         http=self.http,
         batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None))
+        errors=errors))
 
     return results, errors
 
@@ -152,9 +94,16 @@ class ListInstancesBeta(ListInstances):
                 :label=LAST_ERROR
         )"""
 
+  detailed_help = {
+      'brief': 'List instances present in the managed instance group',
+      'DESCRIPTION': """\
+          *{command}* list instances in a managed instance group.
+          """,
+  }
+
 
 @base.ReleaseTracks(base.ReleaseTrack.ALPHA)
-class ListInstancesAlpha(ListInstancesBeta):
+class ListInstancesAlpha(ListInstances):
   """List Google Compute Engine instances present in managed instance group."""
 
   @staticmethod
@@ -169,8 +118,8 @@ class ListInstancesAlpha(ListInstancesBeta):
               extract(instanceStatus, standbyMode).join('-'):label=STATUS,
               currentAction:label=ACTION,
               instanceTemplate.basename():label=INSTANCE_TEMPLATE,
+              tag:label=TAG,
               lastAttempt.errors.errors.map().format("Error {0}: {1}", code, message).list(separator=", "):label=LAST_ERROR
         )"""
 
-ListInstancesBeta.detailed_help = ListInstances.detailed_help
 ListInstancesAlpha.detailed_help = ListInstances.detailed_help

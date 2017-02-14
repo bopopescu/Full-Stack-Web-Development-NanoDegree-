@@ -50,7 +50,8 @@ class _BaseCreate(object):
         default=None,
         help='The activation policy for this instance. This specifies when the '
         'instance should be activated and is applicable only when the '
-        'instance state is RUNNABLE.')
+        'instance state is RUNNABLE. More information on activation policies '
+        'can be found here: https://cloud.google.com/sql/faq#activation_policy')
     parser.add_argument(
         '--assign-ip',
         required=False,
@@ -127,12 +128,14 @@ class _BaseCreate(object):
         choices=['PER_USE', 'PACKAGE'],
         default='PER_USE',
         help='The pricing plan for this instance.')
+    # TODO(b/31989340): add remote completion
     parser.add_argument(
         '--region',
         required=False,
-        choices=['asia-east1', 'europe-west1', 'us-central', 'us-east1'],
         default='us-central',
-        help='The geographical region.')
+        help='The regional location '
+        '(e.g. asia-east1, us-east1). See the full list of regions at '
+        'https://cloud.google.com/sql/docs/instance-locations.')
     parser.add_argument(
         '--replication',
         required=False,
@@ -150,7 +153,9 @@ class _BaseCreate(object):
         '-t',
         required=False,
         default='D1',
-        help='The tier of service for this instance, for example D0, D1.')
+        help='The tier for first generation Cloud SQL instances, for example '
+        ' D0, D1, D2. A complete list of tiers is available here: '
+        'https://cloud.google.com/sql/pricing#packages')
     parser.add_argument(
         '--database-flags',
         type=arg_parsers.ArgDict(min_length=1),
@@ -219,14 +224,21 @@ class Create(_BaseCreate, base.Command):
       )
 
       if args.async:
-        return sql_client.operations.Get(operation_ref.Request())
+        return sql_client.operations.Get(
+            sql_messages.SqlOperationsGetRequest(
+                project=operation_ref.project,
+                instance=operation_ref.instance,
+                operation=operation_ref.operation))
 
       operations.OperationsV1Beta3.WaitForOperation(
           sql_client, operation_ref, 'Creating Cloud SQL instance')
 
       log.CreatedResource(instance_ref)
 
-      new_resource = sql_client.instances.Get(instance_ref.Request())
+      new_resource = sql_client.instances.Get(
+          sql_messages.SqlInstancesGetRequest(
+              project=instance_ref.project,
+              instance=instance_ref.instance))
       cache = remote_completion.RemoteCompletion()
       cache.AddToCache(instance_ref.SelfLink())
       return new_resource
@@ -339,19 +351,23 @@ class CreateBeta(_BaseCreate, base.Command):
       operation_ref = resources.Create(
           'sql.operations',
           operation=result_operation.name,
-          project=instance_ref.project,
-          instance=instance_ref.instance,
-      )
+          project=instance_ref.project)
 
       if args.async:
-        return sql_client.operations.Get(operation_ref.Request())
+        return sql_client.operations.Get(
+            sql_messages.SqlOperationsGetRequest(
+                project=operation_ref.project,
+                operation=operation_ref.operation))
 
       operations.OperationsV1Beta4.WaitForOperation(
           sql_client, operation_ref, 'Creating Cloud SQL instance')
 
       log.CreatedResource(instance_ref)
 
-      new_resource = sql_client.instances.Get(instance_ref.Request())
+      new_resource = sql_client.instances.Get(
+          sql_messages.SqlInstancesGetRequest(
+              project=instance_ref.project,
+              instance=instance_ref.instance))
       cache = remote_completion.RemoteCompletion()
       cache.AddToCache(instance_ref.SelfLink())
       return new_resource

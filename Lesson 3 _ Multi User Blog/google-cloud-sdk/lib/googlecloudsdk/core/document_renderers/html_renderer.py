@@ -14,6 +14,7 @@
 
 """Cloud SDK markdown document HTML renderer."""
 
+import collections
 import re
 
 from googlecloudsdk.core.document_renderers import renderer
@@ -324,47 +325,63 @@ class HTMLRenderer(renderer.Renderer):
     target = target.replace('/', '_') + '.html'
     return '<a href="{target}">{text}</a>'.format(target=target, text=text)
 
-  def List(self, level, definition=None):
+  def List(self, level, definition=None, end=False):
     """Renders a bullet or definition list item.
 
     Args:
       level: The list nesting level.
-      definition: Definition list text if not None, bullet list otherwise.
+      definition: Bullet list if None, definition list otherwise.
+      end: End of list if True.
     """
     self._Flush()
-    while self._level > level:
+    while self._level and self._level > level:
       self._out.write(self._pop[self._level])
       self._level -= 1
-    if level:
-      if definition:
-        if self._level < level:
-          self._level += 1
-          if self._level >= len(self._pop):
-            self._pop.append('')
-          self._pop[self._level] = '</dd>\n</dl>\n'
-          if self._section:
-            self._section = False
-            self._out.write('<dl class="notopmargin">\n')
-          else:
-            self._out.write('<dl>\n')
+    # pylint: disable=g-explicit-bool-comparison, '' is different from None here
+    if end or not level:
+      # End of list.
+      return
+    if definition is not None:
+      # Definition list item.
+      # Blank definition can be used for nested paragraphs.
+      if self._level < level:
+        self._level += 1
+        if self._level >= len(self._pop):
+          self._pop.append('')
+        self._pop[self._level] = '</dd>\n</dl>\n'
+        if self._section:
+          self._section = False
+          self._out.write('<dl class="notopmargin">\n')
         else:
-          self._out.write('</dd>\n')
+          self._out.write('<dl>\n')
+      elif 'dt' in self._pop[self._level]:
+        self._out.write('</dt>\n')
+        self._pop[self._level] = '</dd>\n</dl>\n'
+      else:
+        self._out.write('</dd>\n')
+      if definition:
         self._out.write('<dt id="{document_id}"><span class="normalfont">'
                         '{definition}</span></dt>\n<dd>\n'.format(
                             document_id=self.GetDocumentID(definition),
                             definition=definition))
+      elif self._level > 1 and 'dt' in self._pop[self._level - 1]:
+        self._out.write('<dd>\n')
       else:
-        if self._level < level:
-          self._level += 1
-          if self._level >= len(self._pop):
-            self._pop.append('')
-          self._pop[self._level] = '</li>\n</ul>\n'
-          self._out.write('<ul style="list-style-type:' +
-                          self._BULLET[(level - 1) % len(self._BULLET)] +
-                          '">\n')
-        else:
-          self._out.write('</li>\n')
-        self._out.write('<li>\n')
+        self._out.write('<dt><span class="normalfont">\n')
+        self._pop[self._level] = '</dt>\n</dl>\n'
+    else:  # definition is None
+      # Bullet list item.
+      if self._level < level:
+        self._level += 1
+        if self._level >= len(self._pop):
+          self._pop.append('')
+        self._pop[self._level] = '</li>\n</ul>\n'
+        self._out.write('<ul style="list-style-type:' +
+                        self._BULLET[(level - 1) % len(self._BULLET)] +
+                        '">\n')
+      else:
+        self._out.write('</li>\n')
+      self._out.write('<li>\n')
 
   def Synopsis(self, line):
     """Renders NAME and SYNOPSIS lines as a hanging indent.
@@ -377,7 +394,9 @@ class HTMLRenderer(renderer.Renderer):
     self._out.write('<dl class="notopmargin"><dt class="hangingindent">'
                     '<span class="normalfont">\n')
     nest = 0
-    for c in line:
+    chars = collections.deque(line)
+    while chars:
+      c = chars.popleft()
       if c in '[(':
         nest += 1
         if nest == 1:
@@ -386,6 +405,9 @@ class HTMLRenderer(renderer.Renderer):
         nest -= 1
         if not nest:
           c += '</nobr>'
+      elif nest == 1 and c == ' ' and chars and chars[0] == '|':
+        # A top level group has nest == 1. 4 &nbsp; is aesthetically pleasing.
+        c = '</nobr> <nobr>&nbsp;&nbsp;&nbsp;&nbsp;' + chars.popleft()
       self._out.write(c)
     self._out.write('\n</span></dt></dl>\n')
 

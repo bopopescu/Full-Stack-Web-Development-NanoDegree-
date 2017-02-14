@@ -25,15 +25,14 @@ from googlecloudsdk.command_lib.compute.instances import flags as instances_flag
 
 
 @base.ReleaseTracks(base.ReleaseTrack.ALPHA)
-class CreateFromContainer(base_classes.BaseAsyncCreator,
-                          zone_utils.ZoneResourceFetcher):
+class CreateFromContainer(base_classes.BaseAsyncCreator):
   """Command for creating VM instances running Docker images."""
 
   @staticmethod
   def Args(parser):
     """Register parser args."""
     metadata_utils.AddMetadataArgs(parser)
-    instances_flags.AddDiskArgs(parser)
+    instances_flags.AddDiskArgs(parser, True)
     instances_flags.AddCreateDiskArgs(parser)
     instances_flags.AddLocalSsdArgs(parser)
     instances_flags.AddCanIpForwardArgs(parser)
@@ -42,12 +41,14 @@ class CreateFromContainer(base_classes.BaseAsyncCreator,
     instances_flags.AddMaintenancePolicyArgs(parser)
     instances_flags.AddNoRestartOnFailureArgs(parser)
     instances_flags.AddPreemptibleVmArgs(parser)
-    instances_flags.AddScopeArgs(parser)
+    instances_flags.AddServiceAccountAndScopeArgs(parser, False)
     instances_flags.AddTagsArgs(parser)
     instances_flags.AddCustomMachineTypeArgs(parser)
+    instances_flags.AddExtendedMachineTypeArgs(parser)
     instances_flags.AddNetworkArgs(parser)
     instances_flags.AddPrivateNetworkIpArgs(parser)
     instances_flags.AddDockerArgs(parser)
+    instances_flags.AddPublicDnsArgs(parser, instance=True)
     parser.add_argument(
         '--description',
         help='Specifies a textual description of the instances.')
@@ -70,6 +71,7 @@ class CreateFromContainer(base_classes.BaseAsyncCreator,
     instances_flags.ValidateDockerArgs(args)
     instances_flags.ValidateDiskCommonFlags(args)
     instances_flags.ValidateLocalSsdFlags(args)
+    instances_flags.ValidateServiceAccountAndScopeArgs(args)
     if instance_utils.UseExistingBootDisk(args.disk or []):
       raise exceptions.InvalidArgumentException(
           '--disk',
@@ -81,9 +83,14 @@ class CreateFromContainer(base_classes.BaseAsyncCreator,
         preemptible=args.preemptible,
         restart_on_failure=args.restart_on_failure)
 
+    if args.no_service_account:
+      service_account = None
+    else:
+      service_account = args.service_account
     service_accounts = instance_utils.CreateServiceAccountMessages(
         messages=self.messages,
-        scopes=([] if args.no_scopes else args.scopes))
+        scopes=[] if args.no_scopes else args.scopes,
+        service_account=service_account)
 
     user_metadata = metadata_utils.ConstructMetadataMessage(
         self.messages,
@@ -99,7 +106,10 @@ class CreateFromContainer(base_classes.BaseAsyncCreator,
             self.compute_client, self.project))
 
     # Check if the zone is deprecated or has maintenance coming.
-    self.WarnForZonalCreation(instance_refs)
+    zone_resource_fetcher = zone_utils.ZoneResourceFetcher(self.compute_client)
+    zone_resource_fetcher.WarnForZonalCreation(instance_refs)
+
+    instances_flags.ValidatePublicDnsFlags(args)
 
     network_interface = instance_utils.CreateNetworkInterfaceMessage(
         resources=self.resources,
@@ -109,7 +119,13 @@ class CreateFromContainer(base_classes.BaseAsyncCreator,
         private_network_ip=args.private_network_ip,
         no_address=args.no_address,
         address=args.address,
-        instance_refs=instance_refs)
+        instance_refs=instance_refs,
+        no_public_dns=getattr(args, 'no_public_dns', None),
+        public_dns=getattr(args, 'public_dns', None),
+        no_public_ptr=getattr(args, 'no_public_ptr', None),
+        public_ptr=getattr(args, 'public_ptr', None),
+        no_public_ptr_domain=getattr(args, 'no_public_ptr_domain', None),
+        public_ptr_domain=getattr(args, 'public_ptr_domain', None))
 
     machine_type_uris = instance_utils.CreateMachineTypeUris(
         resources=self.resources,
@@ -118,9 +134,10 @@ class CreateFromContainer(base_classes.BaseAsyncCreator,
         machine_type=args.machine_type,
         custom_cpu=args.custom_cpu,
         custom_memory=args.custom_memory,
+        ext=getattr(args, 'custom_extensions', None),
         instance_refs=instance_refs)
 
-    image_uri = containers_utils.ExpandGciImageFlag(self.compute_client)
+    image_uri = containers_utils.ExpandCosImageFlag(self.compute_client)
     requests = []
     for instance_ref, machine_type_uri in zip(instance_refs, machine_type_uris):
       metadata = containers_utils.CreateMetadataMessage(
@@ -208,10 +225,5 @@ CreateFromContainer.detailed_help = {
         To run the gcr.io/google-containers/busybox image in privileged mode, run:
 
           $ {command} instance-1 --docker-image=gcr.io/google-containers/busybox --run-as-privileged
-
-        To run a Docker deployment described by a container manifest in a
-        containers.json file, run:
-
-          $ {command} instance-1 --container-manifest=containers.json
         """
 }

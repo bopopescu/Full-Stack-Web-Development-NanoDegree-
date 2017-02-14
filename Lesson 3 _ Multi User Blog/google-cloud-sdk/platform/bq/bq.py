@@ -52,6 +52,7 @@ except ImportError:
   from oauth2client.gce import AppAssertionCredentials
 import oauth2client.devshell
 import oauth2client.file
+import oauth2client.service_account
 import oauth2client.tools
 import yaml
 
@@ -89,7 +90,6 @@ _CLIENT_ID = '32555940559.apps.googleusercontent.com'
 _CLIENT_INFO = {
     'client_id': _CLIENT_ID,
     'client_secret': 'ZmssLNjJy2998hD4CTg2ejr2',
-    'scope': [_CLIENT_SCOPE],
     'user_agent': _CLIENT_USER_AGENT,
     }
 _BIGQUERY_TOS_MESSAGE = (
@@ -207,9 +207,7 @@ def _UseServiceAccount():
 
 
 def _GetServiceAccountCredentialsFromFlags(storage):  # pylint: disable=unused-argument
-  client_scope = [_CLIENT_SCOPE]
-  if FLAGS.enable_gdrive is None or FLAGS.enable_gdrive:
-    client_scope.append(_GDRIVE_SCOPE)
+  client_scope = _GetClientScopeFromFlags()
 
   if FLAGS.use_gce_service_account:
     return AppAssertionCredentials(client_scope)
@@ -249,9 +247,7 @@ def _GetCredentialsFromOAuthFlow(storage):
     print 'Running in headless mode, exiting.'
     sys.exit(1)
   client_info = _CLIENT_INFO.copy()
-  if FLAGS.enable_gdrive is None or FLAGS.enable_gdrive:
-    client_info['scope'] = list(client_info['scope'])
-    client_info['scope'].append(_GDRIVE_SCOPE)
+  client_info['scope'] = list(_GetClientScopeFromFlags())
   while True:
     # If authorization fails, we want to retry, rather than let this
     # cascade up and get caught elsewhere. If users want out of the
@@ -280,7 +276,75 @@ def _GetCredentialsFromOAuthFlow(storage):
   return credentials
 
 
+def _GetApplicationDefaultCredentialFromFile(filename):
+  """Loads credentials from given application default credential file."""
+  with open(filename) as file_obj:
+    credentials = json.load(file_obj)
+
+  if credentials['type'] == oauth2client.client.AUTHORIZED_USER:
+    return oauth2client.client.OAuth2Credentials(
+        access_token=None,
+        client_id=credentials['client_id'],
+        client_secret=credentials['client_secret'],
+        refresh_token=credentials['refresh_token'],
+        token_expiry=None,
+        token_uri=oauth2client.client.GOOGLE_TOKEN_URI,
+        user_agent=_CLIENT_USER_AGENT)
+  else:  # Service account
+    client_scope = _GetClientScopeFromFlags()
+    return oauth2client.service_account._ServiceAccountCredentials(  # pylint: disable=protected-access
+        service_account_id=credentials['client_id'],
+        service_account_email=credentials['client_email'],
+        private_key_id=credentials['private_key_id'],
+        private_key_pkcs8_text=credentials['private_key'],
+        scopes=client_scope,
+        user_agent=_CLIENT_USER_AGENT)
+
+
+# pylint: disable=protected-access
+# Patches in oauth2client service account implementation.
+# Later versions (2.0+) of oauth2client do not have this issue.
+def _ServiceAccountCredentialsToJson(self):
+  """Serializes service account credentials to json."""
+  self.service_account_name = self._service_account_email
+  strip = (['_private_key'] +
+           oauth2client.client.Credentials.NON_SERIALIZED_MEMBERS)
+  return self._to_json(strip)
+
+
+@classmethod
+def _ServiceAccountCredentialsFromJson(cls, s):
+  """Deserializes service account credentials from json."""
+  data = json.loads(s)
+  retval = cls(  # pylint: disable=not-callable
+      service_account_id=data['_service_account_id'],
+      service_account_email=data['_service_account_email'],
+      private_key_id=data['_private_key_id'],
+      private_key_pkcs8_text=data['_private_key_pkcs8_text'],
+      scopes=[_CLIENT_SCOPE],
+      user_agent=_CLIENT_USER_AGENT)
+  retval.invalid = data['invalid']
+  retval.access_token = data['access_token']
+  return retval
+
+
+oauth2client.service_account._ServiceAccountCredentials.to_json = (
+    _ServiceAccountCredentialsToJson)
+oauth2client.service_account._ServiceAccountCredentials.from_json = (
+    _ServiceAccountCredentialsFromJson)
+# pylint: enable=protected-access
+
+
+def _GetClientScopeFromFlags():
+  """Returns auth scopes based on user supplied flags."""
+  client_scope = [_CLIENT_SCOPE]
+  if FLAGS.enable_gdrive is None or FLAGS.enable_gdrive:
+    client_scope.append(_GDRIVE_SCOPE)
+  return client_scope
+
+
 def _GetCredentialsFromFlags():
+  """Returns credentials based on user supplied flags."""
   try:
     return oauth2client.devshell.DevshellCredentials()
   except:  # pylint: disable=bare-except
@@ -299,6 +363,15 @@ def _GetCredentialsFromFlags():
       raise app.UsageError(
           'The flag --service_account_credential_file must be specified '
           'if --service_account is used.')
+  elif FLAGS.application_default_credential_file:
+    def credentials_getter(unused_storage):   # pylint: disable=invalid-name
+      return _GetApplicationDefaultCredentialFromFile(
+          FLAGS.application_default_credential_file)
+    credential_file = FLAGS.credential_file
+    if not credential_file:
+      raise app.UsageError(
+          'The flag --credential_file must be specified if '
+          '--application_default_credential_file is used.')
   else:
     credentials_getter = _GetCredentialsFromOAuthFlow
     credential_file = FLAGS.credential_file
@@ -848,11 +921,16 @@ class BigqueryCmd(NewCmd):
     response = []
     retcode = 1
 
+    # pragma pylint: disable=line-too-long
     contact_us_msg = (
-        'Please file a bug report in our public issue tracker:\n'
+        'Please file a bug report in our '
+        'public '
+        'issue tracker:\n'
         '  https://code.google.com/p/google-bigquery/issues/list\n'
-        'Please include a brief description of the steps that led to this '
-        'issue, as well as the following information: \n\n')
+        'Please include a brief description of '
+        'the steps that led to this issue, as well as '
+        'any rows that can be made public from '
+        'the following information: \n\n')
     error_details = (
         '========================================\n'
         '== Platform ==\n'
@@ -1035,6 +1113,11 @@ class _Load(BigqueryCmd):
         '\n ALLOW_FIELD_ADDITION: allow new fields to be added'
         '\n ALLOW_FIELD_RELAXATION: allow relaxing required fields to nullable',
         flag_values=fv)
+    flags.DEFINE_string(
+        'null_marker', None,
+        'An optional custom string that will represent a NULL value'
+        'in CSV import data.',
+        flag_values=fv)
     self._ProcessCommandRc(fv)
 
   def RunWithArgs(self, destination_table, source, schema=None):
@@ -1103,6 +1186,8 @@ class _Load(BigqueryCmd):
       opts['autodetect'] = self.autodetect
     if self.schema_update_option:
       opts['schema_update_options'] = self.schema_update_option
+    if self.null_marker:
+      opts['null_marker'] = self.null_marker
     job = client.Load(table_reference, source, schema=schema, **opts)
     if FLAGS.sync:
       _PrintJobMessages(client.FormatJobInfo(job))
@@ -1351,6 +1436,10 @@ class _Query(BigqueryCmd):
         '\n ALLOW_FIELD_RELAXATION: allow relaxing required fields to nullable',
         flag_values=fv)
     flags.DEFINE_multistring(
+        'label', None,
+        'A label to set on a query job. The format is "key:value"',
+        flag_values=fv)
+    flags.DEFINE_multistring(
         'parameter',
         None,
         ('Either a file containing a JSON list of query parameters, or a query '
@@ -1399,6 +1488,8 @@ class _Query(BigqueryCmd):
       kwds['maximum_bytes_billed'] = self.maximum_bytes_billed
     if self.schema_update_option:
       kwds['schema_update_options'] = self.schema_update_option
+    if self.label is not None:
+      kwds['labels'] = _ParseLabels(self.label)
     if self.parameter:
       kwds['query_parameters'] = _ParseParameters(self.parameter)
     query = ' '.join(args)
@@ -1601,7 +1692,10 @@ class _Partition(BigqueryCmd):  # pylint: disable=missing-docstring
   def RunWithArgs(self, source_prefix, destination_table):
     """Copies source tables into partitioned tables.
 
-    Copies tables of the format <prefix><YYYYmmdd> to a destination
+    Usage:
+    bq partition <source_table_prefix> <destination_partitioned_table>
+
+    Copies tables of the format <source_table_prefix><YYYYmmdd> to a destination
     partitioned table, with the date suffix of the source tables
     becoming the partition date of the destination table partitions.
 
@@ -2097,7 +2191,7 @@ class _Make(BigqueryCmd):
         'time_partitioning_type',
         None,
         'Enables time based partitioning on the table and set the type. The '
-        'only type accepted is DAY, which will generate one partition per day',
+        'only type accepted is DAY, which will generate one partition per day.',
         flag_values=fv)
     flags.DEFINE_integer(
         'time_partitioning_expiration',
@@ -2289,7 +2383,7 @@ class _Update(BigqueryCmd):
         'time_partitioning_type',
         None,
         'Enables time based partitioning on the table and set the type. The '
-        'only type accepted is DAY, which will generate one partition per day',
+        'only type accepted is DAY, which will generate one partition per day.',
         flag_values=fv)
     flags.DEFINE_integer(
         'time_partitioning_expiration',
@@ -2332,6 +2426,14 @@ class _Update(BigqueryCmd):
       reference = client.GetReference(identifier)
       _Typecheck(reference, (DatasetReference, TableReference),
                  "Invalid identifier '%s' for update." % (identifier,))
+
+    label_keys_to_remove = None
+    labels_to_set = None
+    if self.set_label is not None:
+      labels_to_set = _ParseLabels(self.set_label)
+    if self.clear_label is not None:
+      label_keys_to_remove = set(self.clear_label)
+
     if isinstance(reference, DatasetReference):
       if self.schema:
         raise app.UsageError('Cannot specify schema with a dataset.')
@@ -2347,13 +2449,6 @@ class _Update(BigqueryCmd):
       default_table_exp_ms = None
       if self.default_table_expiration is not None:
         default_table_exp_ms = self.default_table_expiration * 1000
-
-      label_keys_to_remove = None
-      labels_to_set = None
-      if self.set_label is not None:
-        labels_to_set = _ParseLabels(self.set_label)
-      if self.clear_label is not None:
-        label_keys_to_remove = set(self.clear_label)
       _UpdateDataset(client,
                      reference,
                      self.description,
@@ -2578,6 +2673,8 @@ def _PrintObjectInfo(object_info, reference, custom_format):
     formatter.Print()
 
 
+
+
 class _Cancel(BigqueryCmd):
   """Attempt to cancel the specified job if it is runnning."""
   usage = """cancel [--nosync] [<job_id>]"""
@@ -2664,6 +2761,7 @@ class _Head(BigqueryCmd):
     else:
       reference = client.GetTableReference(identifier)
 
+
     if isinstance(reference, JobReference):
       fields, rows = client.ReadSchemaAndJobRows(dict(reference),
                                                  start_row=self.s,
@@ -2671,7 +2769,8 @@ class _Head(BigqueryCmd):
     elif isinstance(reference, TableReference):
       fields, rows = client.ReadSchemaAndRows(dict(reference),
                                               start_row=self.s,
-                                              max_rows=self.n)
+                                              max_rows=self.n
+                                             )
     else:
       raise app.UsageError("Invalid identifier '%s' for head." % (identifier,))
 
@@ -3391,7 +3490,7 @@ def run_main():
   # Put the flags for this module somewhere the flags module will look
   # for them.
   # pylint: disable=protected-access
-  new_name = flags._GetMainModule()
+  new_name = sys.argv[0]
   sys.modules[new_name] = sys.modules['__main__']
   for flag in FLAGS.FlagsByModuleDict().get(__name__, []):
     FLAGS._RegisterFlagByModule(new_name, flag)

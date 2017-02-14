@@ -13,7 +13,7 @@
 # limitations under the License.
 """Common utility functions for Updater."""
 
-from googlecloudsdk.api_lib.compute import time_utils
+from googlecloudsdk.command_lib.util import time_util
 from googlecloudsdk.core import apis as core_apis
 from googlecloudsdk.core.console import progress_tracker
 from googlecloudsdk.core.resource import resource_printer
@@ -46,13 +46,17 @@ def WaitForOperation(client, operation_ref, message):
   """
   with progress_tracker.ProgressTracker(message, autotick=False) as pt:
     while True:
-      operation = client.zoneOperations.Get(operation_ref.Request())
+      operation = client.zoneOperations.Get(
+          client.MESSAGES_MODULE.ReplicapoolupdaterZoneOperationsGetRequest(
+              project=operation_ref.project,
+              zone=operation_ref.zone,
+              operation=operation_ref.operation))
       if operation.error:
         return False
       if operation.status == 'DONE':
         return True
       pt.Tick()
-      time_utils.Sleep(2)
+      time_util.Sleep(2)
 
 
 def PrettyPrint(resource, print_format='json'):

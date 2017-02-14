@@ -20,39 +20,80 @@ from googlecloudsdk.core import log
 from googlecloudsdk.core.console import console_io
 
 FAMILY_PREFIX = 'family/'
-
-
-class ImageResourceFetcher(object):
-  """Mixin class for displaying images."""
+GUEST_OS_FEATURES = []
+GUEST_OS_FEATURES_BETA = ['MULTI_IP_SUBNET',
+                          'VIRTIO_SCSI_MULTIQUEUE',
+                          'WINDOWS',
+                         ]
+GUEST_OS_FEATURES_ALPHA = ['MULTI_IP_SUBNET',
+                           'VIRTIO_SCSI_MULTIQUEUE',
+                           'WINDOWS',
+                          ]
 
 
 class ImageExpander(object):
-  """Mixin class for expanding image aliases."""
+  """Class for expanding image aliases."""
 
-  def GetMatchingImages(self, image, alias, errors):
+  def __init__(self, compute_client, resources):
+    """Instantiate ImageExpander and embed all required data into it.
+
+    ImageExpander is a class depending on "base_classes"
+    class layout (properties side-derived from one of base_class class). This
+    function can be used to avoid unfeasible inheritance and use composition
+    instead when refactoring away from base_classes into stateless style.
+
+    This constructor embeds following properties into ImageExpander instance:
+     - compute
+     - messages
+     - http
+     - batch_url
+     - resources
+
+    Example:
+      compute_holder = base_classes.ComputeApiHolder(self.ReleaseTrack())
+      client = compute_holder.client
+      resources = compute_holder.resources
+
+      image_expander = ImageExpander(client, resources)
+        or
+      image_expander = ImageExpander(self.compute_client, self.resources)
+        to use in a class derived from some of base_classes
+
+      image_expander.ExpandImageFlag(...)
+
+    Args:
+      compute_client: compute_holder.client
+      resources: compute_holder.resources
+    """
+    self._compute = compute_client.apitools_client
+    self._messages = compute_client.messages
+    self._http = compute_client.apitools_client.http
+    self._batch_url = compute_client.batch_url
+    self._resources = resources
+
+  def GetMatchingImages(self, user_project, image, alias, errors):
     """Yields images from a public image project and the user's project."""
-    service = self.compute.images
+    service = self._compute.images
     requests = [
         (service,
          'List',
-         self.messages.ComputeImagesListRequest(
+         self._messages.ComputeImagesListRequest(
              filter='name eq ^{0}(-.+)*-v.+'.format(alias.name_prefix),
              maxResults=constants.MAX_RESULTS_PER_PAGE,
              project=alias.project)),
         (service,
          'List',
-         self.messages.ComputeImagesListRequest(
+         self._messages.ComputeImagesListRequest(
              filter='name eq ^{0}$'.format(image),
              maxResults=constants.MAX_RESULTS_PER_PAGE,
-             project=self.project)),
+             project=user_project)),
     ]
 
     return request_helper.MakeRequests(
         requests=requests,
-        http=self.http,
-        batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None)
+        http=self._http,
+        batch_url=self._batch_url,
+        errors=errors)
 
   def GetImage(self, image_ref):
     """Returns the image resource corresponding to the given reference."""
@@ -60,24 +101,23 @@ class ImageExpander(object):
     requests = []
     name = image_ref.Name()
     if name.startswith(FAMILY_PREFIX):
-      requests.append((self.compute.images,
+      requests.append((self._compute.images,
                        'GetFromFamily',
-                       self.messages.ComputeImagesGetFromFamilyRequest(
+                       self._messages.ComputeImagesGetFromFamilyRequest(
                            family=name[len(FAMILY_PREFIX):],
                            project=image_ref.project)))
     else:
-      requests.append((self.compute.images,
+      requests.append((self._compute.images,
                        'Get',
-                       self.messages.ComputeImagesGetRequest(
+                       self._messages.ComputeImagesGetRequest(
                            image=name,
                            project=image_ref.project)))
 
     res = list(request_helper.MakeRequests(
         requests=requests,
-        http=self.http,
-        batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None))
+        http=self._http,
+        batch_url=self._batch_url,
+        errors=errors))
     if errors:
       utils.RaiseToolException(
           errors,
@@ -85,6 +125,7 @@ class ImageExpander(object):
     return res[0]
 
   def ExpandImageFlag(self,
+                      user_project,
                       image=None,
                       image_family=None,
                       image_project=None,
@@ -98,6 +139,7 @@ class ImageExpander(object):
     provided, only the given project is queried.
 
     Args:
+      user_project: The user's project.
       image: The name of the image.
       image_family: The family of the image. Is ignored if image name is
         specified.
@@ -111,36 +153,39 @@ class ImageExpander(object):
         it is the image resource.
     """
 
-    image_ref = None
-
-    if image:
-      image_ref = self.resources.Parse(
-          image, collection='compute.images', resolve=False)
-    elif image_family is not None:
-      image_ref = self.resources.Parse(
-          image_family, collection='compute.images', resolve=False)
-      if not image_ref.image.startswith(FAMILY_PREFIX):
-        image_ref.image = FAMILY_PREFIX + image_ref.image
-    else:
-      image_ref = self.resources.Parse(
-          constants.DEFAULT_IMAGE_FAMILY,
-          collection='compute.images',
-          params={'project': 'debian-cloud'},
-          resolve=False)
-      if not image_ref.image.startswith(FAMILY_PREFIX):
-        image_ref.image = FAMILY_PREFIX + image_ref.image
-
     # If an image project was specified, then assume that image refers
     # to an image in that project.
     if image_project:
-      image_project_ref = self.resources.Parse(
+      image_project_ref = self._resources.Parse(
           image_project, collection='compute.projects')
-      image_ref.project = image_project_ref.Name()
-      image_ref.Resolve()
+      image_project = image_project_ref.Name()
+
+    image_ref = None
+
+    if image:
+      image_ref = self._resources.Parse(
+          image, params={'project': image_project}, collection='compute.images')
+    else:
+      if image_family is not None:
+        image_ref = self._resources.Parse(
+            image_family, params={'project': image_project},
+            collection='compute.images')
+      else:
+        image_ref = self._resources.Parse(
+            constants.DEFAULT_IMAGE_FAMILY,
+            collection='compute.images',
+            params={'project': 'debian-cloud'})
+      if not image_ref.image.startswith(FAMILY_PREFIX):
+        relative_name = image_ref.RelativeName()
+        relative_name = (relative_name[:-len(image_ref.image)] +
+                         FAMILY_PREFIX + image_ref.image)
+        image_ref = self._resources.ParseRelativeName(
+            relative_name, image_ref.Collection())
+
+    if image_project:
       return (image_ref.SelfLink(),
               self.GetImage(image_ref) if return_image_resource else None)
 
-    image_ref.Resolve()
     alias = constants.IMAGE_ALIASES.get(image_ref.Name())
 
     # Check for hidden aliases.
@@ -161,7 +206,8 @@ class ImageExpander(object):
     WarnAlias(alias)
 
     errors = []
-    images = self.GetMatchingImages(image_ref.Name(), alias, errors)
+    images = self.GetMatchingImages(user_project, image_ref.Name(), alias,
+                                    errors)
 
     user_image = None
     public_images = []
@@ -169,7 +215,9 @@ class ImageExpander(object):
     for image in images:
       if image.deprecated:
         continue
-      if '/projects/{0}/'.format(self.project) in image.selfLink:
+      image_ref2 = self._resources.Parse(
+          image.selfLink, collection='compute.images', enforce_collection=True)
+      if image_ref2.project == user_project:
         user_image = image
       else:
         public_images.append(image)

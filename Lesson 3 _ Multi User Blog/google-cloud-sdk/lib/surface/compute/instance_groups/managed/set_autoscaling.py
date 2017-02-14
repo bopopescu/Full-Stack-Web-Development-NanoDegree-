@@ -18,6 +18,7 @@ from googlecloudsdk.api_lib.compute import managed_instance_groups_utils
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.command_lib.compute import flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
 from googlecloudsdk.command_lib.compute.instance_groups import flags as instance_groups_flags
 
 
@@ -26,7 +27,7 @@ def _IsZonalGroup(ref):
   return ref.Collection() == 'compute.instanceGroupManagers'
 
 
-@base.ReleaseTracks(base.ReleaseTrack.GA)
+@base.ReleaseTracks(base.ReleaseTrack.GA, base.ReleaseTrack.BETA)
 class SetAutoscaling(base_classes.BaseAsyncMutator):
   """Set autoscaling parameters of a managed instance group."""
 
@@ -48,79 +49,12 @@ class SetAutoscaling(base_classes.BaseAsyncMutator):
   def Args(parser):
     managed_instance_groups_utils.AddAutoscalerArgs(
         parser=parser, queue_scaling_enabled=False)
-    instance_groups_flags.ZONAL_INSTANCE_GROUP_MANAGER_ARG.AddArgument(parser)
-
-  def CreateGroupReference(self, args):
-    return self.CreateZonalReference(
-        args.name, args.zone, resource_type='instanceGroupManagers')
-
-  def GetAutoscalerServiceForGroup(self, group_ref):
-    return self.compute.autoscalers
-
-  def CreateAutoscalerResource(self, igm_ref, args):
-    zone = args.zone or igm_ref.zone
-    autoscaler = managed_instance_groups_utils.AutoscalerForMig(
-        mig_name=igm_ref.Name(),
-        autoscalers=managed_instance_groups_utils.AutoscalersForLocations(
-            regions=None,
-            zones=[zone],
-            project=self.project,
-            compute=self.compute,
-            http=self.http,
-            batch_url=self.batch_url),
-        scope_name=zone,
-        scope_type='zone',
-        project=self.project)
-    autoscaler_name = getattr(autoscaler, 'name', None)
-    as_ref = self.CreateZonalReference(autoscaler_name or args.name, zone)
-    return managed_instance_groups_utils.BuildAutoscaler(
-        args, self.messages, as_ref, igm_ref), autoscaler_name is None
-
-  def ScopeRequest(self, request, igm_ref):
-    request.zone = igm_ref.zone
-
-  def CreateRequests(self, args):
-    managed_instance_groups_utils.ValidateAutoscalerArgs(args)
-
-    igm_ref = self.CreateGroupReference(args)
-    service = self.GetAutoscalerServiceForGroup(igm_ref)
-
-    # Assert that Instance Group Manager exists.
-    managed_instance_groups_utils.GetInstanceGroupManagerOrThrow(
-        igm_ref, self.project, self.compute, self.http, self.batch_url)
-
-    autoscaler_resource, is_new = self.CreateAutoscalerResource(igm_ref, args)
-
-    if is_new:
-      method = 'Insert'
-      request = service.GetRequestType(method)(project=self.project)
-      managed_instance_groups_utils.AdjustAutoscalerNameForCreation(
-          autoscaler_resource)
-      request.autoscaler = autoscaler_resource
-    else:
-      method = 'Update'
-      request = service.GetRequestType(method)(project=self.project)
-      request.autoscaler = autoscaler_resource.name
-      request.autoscalerResource = autoscaler_resource
-
-    self.ScopeRequest(request, igm_ref)
-    return ((service, method, request),)
-
-
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
-class SetAutoscalingBeta(SetAutoscaling):
-  """Set autoscaling parameters of a managed instance group."""
-
-  @staticmethod
-  def Args(parser):
-    managed_instance_groups_utils.AddAutoscalerArgs(
-        parser=parser, queue_scaling_enabled=False)
     instance_groups_flags.MULTISCOPE_INSTANCE_GROUP_MANAGER_ARG.AddArgument(
         parser)
 
   def CreateGroupReference(self, args):
     resource_arg = instance_groups_flags.MULTISCOPE_INSTANCE_GROUP_MANAGER_ARG
-    default_scope = flags.ScopeEnum.ZONE
+    default_scope = compute_scope.ScopeEnum.ZONE
     scope_lister = flags.GetDefaultScopeLister(
         self.compute_client, self.project)
     return resource_arg.ResolveAsResource(
@@ -156,24 +90,20 @@ class SetAutoscalingBeta(SetAutoscaling):
         scope_type=scope_type,
         project=self.project)
     autoscaler_name = getattr(autoscaler, 'name', None)
+    new_one = autoscaler_name is None
+    autoscaler_name = autoscaler_name or args.name
 
     if _IsZonalGroup(igm_ref):
-      as_ref = self.CreateZonalReference(
-          autoscaler_name or args.name, scope_name,
-          resource_type='autoscalers')
+      autoscaler_resource = managed_instance_groups_utils.BuildAutoscaler(
+          args, self.messages, igm_ref, autoscaler_name, zone=scope_name)
     else:
-      as_ref = self.CreateRegionalReference(
-          autoscaler_name or args.name, scope_name,
-          resource_type='regionAutoscalers')
-
-    autoscaler_resource = managed_instance_groups_utils.BuildAutoscaler(
-        args, self.messages, as_ref, igm_ref)
-    if not _IsZonalGroup(igm_ref):
-      region_link = self.CreateRegionalReference(
-          as_ref.region, as_ref.region, resource_type='regions')
+      autoscaler_resource = managed_instance_groups_utils.BuildAutoscaler(
+          args, self.messages, igm_ref, autoscaler_name, region=scope_name)
+      region_link = self.resources.Parse(
+          scope_name, collection='compute.regions')
       autoscaler_resource.region = region_link.SelfLink()
 
-    return autoscaler_resource, autoscaler_name is None
+    return autoscaler_resource, new_one
 
   def ScopeRequest(self, request, igm_ref):
     if _IsZonalGroup(igm_ref):
@@ -181,9 +111,36 @@ class SetAutoscalingBeta(SetAutoscaling):
     else:
       request.region = igm_ref.region
 
+  def CreateRequests(self, args):
+    managed_instance_groups_utils.ValidateAutoscalerArgs(args)
+
+    igm_ref = self.CreateGroupReference(args)
+    service = self.GetAutoscalerServiceForGroup(igm_ref)
+
+    # Assert that Instance Group Manager exists.
+    managed_instance_groups_utils.GetInstanceGroupManagerOrThrow(
+        igm_ref, self.compute_client)
+
+    autoscaler_resource, is_new = self.CreateAutoscalerResource(igm_ref, args)
+
+    if is_new:
+      method = 'Insert'
+      request = service.GetRequestType(method)(project=self.project)
+      managed_instance_groups_utils.AdjustAutoscalerNameForCreation(
+          autoscaler_resource)
+      request.autoscaler = autoscaler_resource
+    else:
+      method = 'Update'
+      request = service.GetRequestType(method)(project=self.project)
+      request.autoscaler = autoscaler_resource.name
+      request.autoscalerResource = autoscaler_resource
+
+    self.ScopeRequest(request, igm_ref)
+    return ((service, method, request),)
+
 
 @base.ReleaseTracks(base.ReleaseTrack.ALPHA)
-class SetAutoscalingAlpha(SetAutoscalingBeta):
+class SetAutoscalingAlpha(SetAutoscaling):
   """Set autoscaling parameters of a managed instance group."""
 
   @staticmethod
@@ -204,5 +161,4 @@ Autoscalers can use one or more policies listed below. Information on using
 multiple policies can be found here: [](https://cloud.google.com/compute/docs/autoscaler/multiple-policies)
         """,
 }
-SetAutoscalingBeta.detailed_help = SetAutoscaling.detailed_help
 SetAutoscalingAlpha.detailed_help = SetAutoscaling.detailed_help

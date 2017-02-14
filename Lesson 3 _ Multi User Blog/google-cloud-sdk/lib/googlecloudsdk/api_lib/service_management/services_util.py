@@ -25,6 +25,7 @@ from googlecloudsdk.core import apis
 from googlecloudsdk.core import exceptions as core_exceptions
 from googlecloudsdk.core import log
 from googlecloudsdk.core import properties
+from googlecloudsdk.core import resources
 from googlecloudsdk.core.resource import resource_printer
 from googlecloudsdk.core.util import retry
 from googlecloudsdk.core.util import times
@@ -35,9 +36,24 @@ import yaml
 EMAIL_REGEX = re.compile(r'^.+@([^.@][^@]+)$')
 FINGERPRINT_REGEX = re.compile(
     r'^([a-f0-9][a-f0-9]:){19}[a-f0-9][a-f0-9]$', re.IGNORECASE)
-OP_BASE_CMD = 'gcloud beta service-management operations '
+OP_BASE_CMD = 'gcloud service-management operations '
 OP_DESCRIBE_CMD = OP_BASE_CMD + 'describe {0}'
 OP_WAIT_CMD = OP_BASE_CMD + 'wait {0}'
+SERVICES_COLLECTION = 'servicemanagement-v1.services'
+CONFIG_COLLECTION = 'servicemanagement-v1.serviceConfigs'
+
+ALL_IAM_PERMISSIONS = [
+    'servicemanagement.services.get',
+    'servicemanagement.services.getProjectSettings',
+    'servicemanagement.services.delete',
+    'servicemanagement.services.update',
+    'servicemanagement.services.use',
+    'servicemanagement.services.updateProjectSettings',
+    'servicemanagement.services.check',
+    'servicemanagement.services.report',
+    'servicemanagement.services.setIamPolicy',
+    'servicemanagement.services.getIamPolicy',
+]
 
 
 class OperationErrorException(core_exceptions.Error):
@@ -74,18 +90,16 @@ def GetServiceManagementServiceName():
   return 'servicemanagement.googleapis.com'
 
 
-def ParseOperationName(op_name):
-  optional_prefix_to_strip = 'operations/'
-
-  # If a user includes the leading "operations/", just strip it off
-  if op_name.startswith(optional_prefix_to_strip):
-    op_name = op_name[len(optional_prefix_to_strip):]
-
-  return op_name
-
-
 def GetValidatedProject(project_id):
-  # If supplied a project explicitly, validate it, then return it.
+  """Validate the project ID, if supplied, otherwise return the default project.
+
+  Args:
+    project_id: The ID of the project to validate. If None, gcloud's default
+                project's ID will be returned.
+
+  Returns:
+    The validated project ID.
+  """
   if project_id:
     properties.VALUES.core.project.Validate(project_id)
   else:
@@ -121,19 +135,12 @@ def GetProjectSettings(service, consumer_project_id, view):
 
 def GetEnabledListRequest(project_id):
   return GetMessagesModule().ServicemanagementServicesListRequest(
-      consumerProjectId=project_id
+      consumerId='project:' + project_id
   )
 
 
-def GetAvailableListRequest(project_id):
-  # The constant strings here are special settings that will make Inception
-  # return all services available to a project.
-  return GetMessagesModule().ServicemanagementServicesListRequest(
-      consumerProjectId=project_id,
-      category=('servicemanagement.googleapis.com/'
-                'categories/google-services'),
-      expand='consumerSettings',
-  )
+def GetAvailableListRequest():
+  return GetMessagesModule().ServicemanagementServicesListRequest()
 
 
 def GetProducedListRequest(project_id):
@@ -142,34 +149,52 @@ def GetProducedListRequest(project_id):
   )
 
 
-def GetError(error, verbose=False):
-  """Returns a ready-to-print string representation from the http response.
+def PrettyPrint(resource, print_format='json'):
+  """Prints the given resource.
 
   Args:
-    error: A string representing the raw json of the Http error response.
-    verbose: Whether or not to print verbose messages [default false]
-
-  Returns:
-    A ready-to-print string representation of the error.
+    resource: The resource to print out.
+    print_format: The print_format value to pass along to the resource_printer.
   """
-  data = json.loads(error.content)
-  if verbose:
-    PrettyPrint(data)
-  code = data['error']['code']
-  message = data['error']['message']
-  return 'ResponseError: code={0}, message={1}'.format(code, message)
-
-
-def PrettyPrint(resource, print_format='json'):
-  """Prints the given resource."""
   resource_printer.Print(
       resources=[resource],
       print_format=print_format,
       out=log.out)
 
 
-def PushGoogleServiceConfig(service_name, project, config_contents):
-  """Pushes a given Google service configuration.
+def FilenameMatchesExtension(filename, extensions):
+  """Checks to see if a file name matches one of the given extensions.
+
+  Args:
+    filename: The full path to the file to check
+    extensions: A list of candidate extensions.
+
+  Returns:
+    True if the filename matches one of the extensions, otherwise False.
+  """
+  f = filename.lower()
+  for ext in extensions:
+    if f.endswith(ext.lower()):
+      return True
+  return False
+
+
+def IsProtoDescriptor(filename):
+  return FilenameMatchesExtension(filename, ['.pb', '.descriptor'])
+
+
+def ReadServiceConfigFile(file_path):
+  try:
+    mode = 'rb' if IsProtoDescriptor(file_path) else 'r'
+    with open(file_path, mode) as f:
+      return f.read()
+  except IOError as ex:
+    raise exceptions.BadFileException(
+        'Could not open service config file [{0}]: {1}'.format(file_path, ex))
+
+
+def PushNormalizedGoogleServiceConfig(service_name, project, config_contents):
+  """Pushes a given normalized Google service configuration.
 
   Args:
     service_name: name of the service
@@ -177,7 +202,7 @@ def PushGoogleServiceConfig(service_name, project, config_contents):
     config_contents: the contents of the Google Service Config file.
 
   Returns:
-    Config Id assigned by the server which is the service configuration version
+    Config Id assigned by the server which is the service configuration Id
   """
   messages = GetMessagesModule()
   client = GetClientInstance()
@@ -193,33 +218,33 @@ def PushGoogleServiceConfig(service_name, project, config_contents):
   return service_resource.id
 
 
-def PushOpenApiServiceConfig(
-    service_name, spec_file_contents, spec_file_path, async):
-  """Pushes a given Open API service configuration.
+def GetServiceConfigIdFromSubmitConfigSourceResponse(response):
+  return response.get('serviceConfig', {}).get('id')
+
+
+def PushMultipleServiceConfigFiles(service_name, config_files, async,
+                                   validate_only=False):
+  """Pushes a given set of service configuration files.
 
   Args:
-    service_name: name of the service
-    spec_file_contents: the contents of the Open API spec file.
-    spec_file_path: the path of the Open API spec file.
+    service_name: name of the service.
+    config_files: a list of ConfigFile message objects.
     async: whether to wait for aync operations or not.
+    validate_only: whether to perform a validate-only run of the operation
+                     or not.
 
   Returns:
-    Config Id assigned by the server which is the service configuration version
+    Full response from the SubmitConfigSource request.
   """
   messages = GetMessagesModule()
   client = GetClientInstance()
 
-  config_file = messages.ConfigFile(
-      fileContents=spec_file_contents,
-      filePath=spec_file_path,
-      # Always use YAML because JSON is a subset of YAML.
-      fileType=(messages.ConfigFile.
-                FileTypeValueValuesEnum.OPEN_API_YAML),
-  )
   config_source = messages.ConfigSource()
-  config_source.files.append(config_file)
+  config_source.files.extend(config_files)
+
   config_source_request = messages.SubmitConfigSourceRequest(
       configSource=config_source,
+      validateOnly=validate_only,
   )
   submit_request = (
       messages.ServicemanagementServicesConfigsSubmitRequest(
@@ -229,10 +254,8 @@ def PushOpenApiServiceConfig(
   api_response = client.services_configs.Submit(submit_request)
   operation = ProcessOperationResult(api_response, async)
 
-  diagnostics = svc_config = None
   response = operation.get('response', {})
   diagnostics = response.get('diagnostics', [])
-  svc_config = response.get('serviceConfig', {})
 
   for diagnostic in diagnostics:
     kind = diagnostic.get('kind', '').upper()
@@ -240,7 +263,36 @@ def PushOpenApiServiceConfig(
     logger('{l}: {m}'.format(
         l=diagnostic.get('location'), m=diagnostic.get('message')))
 
-  return svc_config.get('id')
+  return response
+
+
+def PushOpenApiServiceConfig(
+    service_name, spec_file_contents, spec_file_path, async,
+    validate_only=False):
+  """Pushes a given Open API service configuration.
+
+  Args:
+    service_name: name of the service
+    spec_file_contents: the contents of the Open API spec file.
+    spec_file_path: the path of the Open API spec file.
+    async: whether to wait for aync operations or not.
+    validate_only: whether to perform a validate-only run of the operation
+                   or not.
+
+  Returns:
+    Full response from the SubmitConfigSource request.
+  """
+  messages = GetMessagesModule()
+
+  config_file = messages.ConfigFile(
+      fileContents=spec_file_contents,
+      filePath=spec_file_path,
+      # Always use YAML because JSON is a subset of YAML.
+      fileType=(messages.ConfigFile.
+                FileTypeValueValuesEnum.OPEN_API_YAML),
+  )
+  return PushMultipleServiceConfigFiles(service_name, [config_file], async,
+                                        validate_only=validate_only)
 
 
 def CreateServiceIfNew(service_name, project):
@@ -340,7 +392,6 @@ def ProcessOperationResult(result, async=False):
     The processed Operation message in Python dict form
   """
   op = GetProcessedOperationResult(result, async)
-  cmd = OP_DESCRIBE_CMD.format(op.get('name'))
   if async:
     cmd = OP_WAIT_CMD.format(op.get('name'))
     log.status.Print('Asynchronous operation is in progress... '
@@ -380,10 +431,13 @@ def GetProcessedOperationResult(result, async=False):
 
   if not async:
     op_name = result_dict['name']
+    op_ref = resources.REGISTRY.Parse(
+        op_name,
+        collection='servicemanagement.operations')
     log.status.Print(
         'Waiting for async operation {0} to complete...'.format(op_name))
     result_dict = encoding.MessageToDict(WaitForOperation(
-        op_name, apis.GetClientInstance('servicemanagement', 'v1')))
+        op_ref, apis.GetClientInstance('servicemanagement', 'v1')))
 
   # Convert metadata startTime to local time
   if 'metadata' in result_dict and 'startTime' in result_dict['metadata']:
@@ -411,11 +465,11 @@ def GetCallerViews():
   }
 
 
-def WaitForOperation(op_name, client):
+def WaitForOperation(operation_ref, client):
   """Waits for an operation to complete.
 
   Args:
-    op_name: The name of the operation on which to wait.
+    operation_ref: A reference to the operation on which to wait.
     client: The client object that contains the GetOperation request object.
 
   Raises:
@@ -426,20 +480,15 @@ def WaitForOperation(op_name, client):
     The Operation object, if successful. Raises an exception on failure.
   """
   WaitForOperation.operation_response = None
-
   messages = GetMessagesModule()
+  operation_id = operation_ref.operationsId
 
-  def _CheckOperation(op_name):  # pylint: disable=missing-docstring
-    op_name = ParseOperationName(op_name)
-
+  def _CheckOperation(operation_id):  # pylint: disable=missing-docstring
     request = messages.ServicemanagementOperationsGetRequest(
-        operationsId=op_name,
+        operationsId=operation_id,
     )
 
-    try:
-      result = client.operations.Get(request)
-    except apitools_exceptions.HttpError as error:
-      raise exceptions.HttpException(GetError(error))
+    result = client.operations.Get(request)
 
     if result.done:
       WaitForOperation.operation_response = result
@@ -451,17 +500,17 @@ def WaitForOperation(op_name, client):
   try:
     retry.Retryer(exponential_sleep_multiplier=1.1, wait_ceiling_ms=10000,
                   max_wait_ms=30*60*1000).RetryOnResult(
-                      _CheckOperation, [op_name], should_retry_if=False,
+                      _CheckOperation, [operation_id], should_retry_if=False,
                       sleep_ms=1500)
   except retry.MaxRetrialsException:
     raise exceptions.ToolException('Timed out while waiting for '
-                                   'operation %s. Note that the operation '
-                                   'is still pending.' % op_name)
+                                   'operation {0}. Note that the operation '
+                                   'is still pending.'.format(operation_id))
 
   # Check to see if the operation resulted in an error
   if WaitForOperation.operation_response.error is not None:
     raise OperationErrorException(
-        'The operation with ID {0} resulted in a failure.'.format(op_name))
+        'The operation with ID {0} resulted in a failure.'.format(operation_id))
 
   # If we've gotten this far, the operation completed successfully,
   # so return the Operation object

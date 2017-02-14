@@ -13,6 +13,7 @@
 # limitations under the License.
 """Command for creating disks."""
 
+import argparse
 import textwrap
 
 from googlecloudsdk.api_lib.compute import base_classes
@@ -21,8 +22,10 @@ from googlecloudsdk.api_lib.compute import csek_utils
 from googlecloudsdk.api_lib.compute import image_utils
 from googlecloudsdk.api_lib.compute import utils
 from googlecloudsdk.api_lib.compute import zone_utils
+from googlecloudsdk.api_lib.compute.regions import utils as region_utils
 from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
+from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.command_lib.compute import flags
 from googlecloudsdk.command_lib.compute.disks import flags as disks_flags
 from googlecloudsdk.core import log
@@ -89,6 +92,7 @@ def _SourceArgs(parser, source_snapshot_arg):
 
 def _CommonArgs(parser, source_snapshot_arg):
   """Add arguments used for parsing in all command tracks."""
+  Create.disks_arg.AddArgument(parser)
   parser.add_argument(
       '--description',
       help=(
@@ -123,29 +127,31 @@ def _CommonArgs(parser, source_snapshot_arg):
   csek_utils.AddCsekKeyArgs(parser)
 
 
-class Create(base_classes.BaseAsyncCreator, image_utils.ImageExpander,
-             zone_utils.ZoneResourceFetcher):
+@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.GA)
+class Create(base.Command):
   """Create Google Compute Engine persistent disks."""
+
+  def Format(self, args):
+    return """table(name,
+                    zone.basename(),
+                    sizeGb,
+                    type.basename(),
+                    status)"""
 
   @staticmethod
   def Args(parser):
-    disks_flags.DISKS_ARG.AddArgument(parser)
+    Create.disks_arg = disks_flags.MakeDiskArg(plural=True)
     _CommonArgs(parser, disks_flags.SOURCE_SNAPSHOT_ARG)
 
-  @property
-  def service(self):
-    return self.compute.disks
+  def Validate(self, args):
+    pass
 
-  @property
-  def method(self):
-    return 'Insert'
+  def Run(self, args):
+    compute_holder = base_classes.ComputeApiHolder(self.ReleaseTrack())
+    client = compute_holder.client
 
-  @property
-  def resource_type(self):
-    return 'disks'
+    self.Validate(args)
 
-  def CreateRequests(self, args):
-    """Returns a list of requests necessary for adding disks."""
     size_gb = utils.BytesToGb(args.size)
 
     from_image = args.image or args.image_family
@@ -158,25 +164,40 @@ class Create(base_classes.BaseAsyncCreator, image_utils.ImageExpander,
     utils.WarnIfDiskSizeIsTooSmall(size_gb, args.type)
 
     requests = []
-    disk_refs = disks_flags.DISKS_ARG.ResolveAsResource(
-        args, self.resources,
-        scope_lister=flags.GetDefaultScopeLister(
-            self.compute_client, self.project))
+    disk_refs = Create.disks_arg.ResolveAsResource(
+        args, compute_holder.resources,
+        scope_lister=flags.GetDefaultScopeLister(client))
 
     # Check if the zone is deprecated or has maintenance coming.
-    self.WarnForZonalCreation(disk_refs)
+    zone_resource_fetcher = zone_utils.ZoneResourceFetcher(client)
+    zone_resource_fetcher.WarnForZonalCreation(
+        (ref for ref in disk_refs if ref.Collection() == 'compute.disks'))
+    # Check if the region is deprecated or has maintenance coming.
+    region_resource_fetcher = region_utils.RegionResourceFetcher(client)
+    region_resource_fetcher.WarnForRegionalCreation(
+        (ref for ref in disk_refs if ref.Collection() == 'compute.regionDisks'))
 
-    if from_image:
-      source_image_uri, _ = self.ExpandImageFlag(
-          image=args.image,
-          image_family=args.image_family,
-          image_project=args.image_project,
-          return_image_resource=False)
-    else:
-      source_image_uri = None
+    project_to_source_image = {}
+
+    image_expander = image_utils.ImageExpander(client, compute_holder.resources)
+
+    for disk_ref in disk_refs:
+      if from_image:
+        if disk_ref.project not in project_to_source_image:
+          source_image_uri, _ = image_expander.ExpandImageFlag(
+              user_project=disk_ref.project,
+              image=args.image,
+              image_family=args.image_family,
+              image_project=args.image_project,
+              return_image_resource=False)
+          project_to_source_image[disk_ref.project] = argparse.Namespace()
+          project_to_source_image[disk_ref.project].uri = source_image_uri
+      else:
+        project_to_source_image[disk_ref.project] = argparse.Namespace()
+        project_to_source_image[disk_ref.project].uri = None
 
     snapshot_ref = disks_flags.SOURCE_SNAPSHOT_ARG.ResolveAsResource(
-        args, self.resources)
+        args, compute_holder.resources)
     if snapshot_ref:
       snapshot_uri = snapshot_ref.SelfLink()
     else:
@@ -187,16 +208,23 @@ class Create(base_classes.BaseAsyncCreator, image_utils.ImageExpander,
                                                   base.ReleaseTrack.BETA]
     csek_keys = csek_utils.CsekKeyStore.FromArgs(args, allow_rsa_encrypted)
 
-    image_key_message_or_none, snapshot_key_message_or_none = (
-        csek_utils.MaybeLookupKeyMessagesByUri(
-            csek_keys, self.resources, [source_image_uri, snapshot_uri],
-            self.compute))
+    for project in project_to_source_image:
+      source_image_uri = project_to_source_image[project].uri
+      project_to_source_image[project].keys = (
+          csek_utils.MaybeLookupKeyMessagesByUri(
+              csek_keys, compute_holder.resources,
+              [source_image_uri, snapshot_uri], client.apitools_client))
 
     for disk_ref in disk_refs:
       if args.type:
-        type_ref = self.resources.Parse(
-            args.type, collection='compute.diskTypes',
-            params={'zone': disk_ref.zone})
+        if disk_ref.Collection() == 'compute.disks':
+          type_ref = compute_holder.resources.Parse(
+              args.type, collection='compute.diskTypes',
+              params={'zone': disk_ref.zone})
+        elif disk_ref.Collection() == 'compute.regionDisks':
+          type_ref = compute_holder.resources.Parse(
+              args.type, collection='compute.regionDiskTypes',
+              params={'region': disk_ref.region})
         type_uri = type_ref.SelfLink()
       else:
         type_uri = None
@@ -205,27 +233,53 @@ class Create(base_classes.BaseAsyncCreator, image_utils.ImageExpander,
         disk_key_or_none = csek_keys.LookupKey(
             disk_ref, args.require_csek_key_create)
         disk_key_message_or_none = csek_utils.MaybeToMessage(
-            disk_key_or_none, self.compute)
+            disk_key_or_none, client.apitools_client)
         kwargs = {'diskEncryptionKey': disk_key_message_or_none,
-                  'sourceImageEncryptionKey': image_key_message_or_none,
-                  'sourceSnapshotEncryptionKey': snapshot_key_message_or_none}
+                  'sourceImageEncryptionKey':
+                      project_to_source_image[disk_ref.project].keys[0],
+                  'sourceSnapshotEncryptionKey':
+                      project_to_source_image[disk_ref.project].keys[1]}
       else:
         kwargs = {}
 
-      request = self.messages.ComputeDisksInsertRequest(
-          disk=self.messages.Disk(
-              name=disk_ref.Name(),
-              description=args.description,
-              sizeGb=size_gb,
-              sourceSnapshot=snapshot_uri,
-              type=type_uri,
-              **kwargs),
-          project=self.project,
-          sourceImage=source_image_uri,
-          zone=disk_ref.zone)
+      if disk_ref.Collection() == 'compute.disks':
+        request = client.messages.ComputeDisksInsertRequest(
+            disk=client.messages.Disk(
+                name=disk_ref.Name(),
+                description=args.description,
+                sizeGb=size_gb,
+                sourceSnapshot=snapshot_uri,
+                type=type_uri,
+                **kwargs),
+            project=disk_ref.project,
+            sourceImage=project_to_source_image[disk_ref.project].uri,
+            zone=disk_ref.zone)
+        request = (client.apitools_client.disks, 'Insert', request)
+      elif disk_ref.Collection() == 'compute.regionDisks':
+        def SelfLink(zone, disk_ref):
+          return compute_holder.resources.Parse(
+              zone,
+              collection='compute.zones',
+              params={
+                  'project': disk_ref.project
+              }).SelfLink()
+        zones = [SelfLink(zone, disk_ref) for zone in args.replica_zones]
+        request = client.messages.ComputeRegionDisksInsertRequest(
+            disk=client.messages.Disk(
+                name=disk_ref.Name(),
+                description=args.description,
+                sizeGb=size_gb,
+                sourceSnapshot=snapshot_uri,
+                type=type_uri,
+                replicaZones=zones,
+                **kwargs),
+            project=disk_ref.project,
+            sourceImage=project_to_source_image[disk_ref.project].uri,
+            region=disk_ref.region)
+        request = (client.apitools_client.regionDisks, 'Insert', request)
       requests.append(request)
 
-    return requests
+    return client.MakeRequests(requests)
 
   def Epilog(self, resources_were_displayed=True):
     message = """\
@@ -238,3 +292,36 @@ class Create(base_classes.BaseAsyncCreator, image_utils.ImageExpander,
     log.status.Print(textwrap.dedent(message))
 
 Create.detailed_help = DETAILED_HELP
+
+
+@base.ReleaseTracks(base.ReleaseTrack.ALPHA)
+class CreateAlpha(Create):
+  """Create Google Compute Engine persistent disks."""
+
+  @staticmethod
+  def Args(parser):
+    Create.disks_arg = disks_flags.MakeDiskArgZonalOrRegional(plural=True)
+    parser.add_argument(
+        '--replica-zones',
+        type=arg_parsers.ArgList(),
+        metavar='ZONE1, ZONE2',
+        help=('The zones regional disk will be replicated to. Required when '
+              'creating regional disk.'),
+        hidden=True)
+
+    _CommonArgs(parser, disks_flags.SOURCE_SNAPSHOT_ARG)
+
+  def Validate(self, args):
+    if args.replica_zones is None and args.region is not None:
+      raise exceptions.RequiredArgumentException(
+          '--replica-zones',
+          '--replica-zones is required for regional disk creation')
+    if args.replica_zones is not None:
+      if args.region is None:
+        raise exceptions.RequiredArgumentException(
+            '--region',
+            '--replica-zones is used only for regional disk creation')
+      if len(args.replica_zones) != 2:
+        raise exceptions.InvalidArgumentException(
+            '--replica-zones',
+            'Exactly two zones are required.')

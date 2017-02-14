@@ -14,6 +14,7 @@
 
 """Some general file utilities used that can be used by the Cloud SDK."""
 
+import contextlib
 import errno
 import hashlib
 import logging
@@ -45,6 +46,46 @@ class Error(Exception):
   pass
 
 
+def CopyTree(src, dst):
+  """Copies a directory recursively, without copying file stat info.
+
+  More specifically, behaves like `cp -R` rather than `cp -Rp`, which means that
+  the destination directory and its contents will be *writable* and *deletable*.
+
+  (Yes, an omnipotent being can shutil.copytree a directory so read-only that
+  they cannot delete it. But they cannot do that with this function.)
+
+  Adapted from shutil.copytree.
+
+  Args:
+    src: str, the path to the source directory
+    dst: str, the path to the destination directory. Must not already exist and
+      be writable.
+
+  Raises:
+    shutil.Error: if copying failed for any reason.
+  """
+  os.makedirs(dst)
+  errors = []
+  for name in os.listdir(src):
+    srcname = os.path.join(src, name)
+    dstname = os.path.join(dst, name)
+    try:
+      if os.path.isdir(srcname):
+        CopyTree(srcname, dstname)
+      else:
+        # Will raise a SpecialFileError for unsupported file types
+        shutil.copy2(srcname, dstname)
+    # catch the Error from the recursive copytree so that we can
+    # continue with other files
+    except shutil.Error as err:
+      errors.extend(err.args[0])
+    except EnvironmentError as why:
+      errors.append((srcname, dstname, str(why)))
+  if errors:
+    raise shutil.Error(errors)
+
+
 def MakeDir(path, mode=0777):
   """Creates the given directory and its parents and does not fail if it exists.
 
@@ -73,6 +114,14 @@ def MakeDir(path, mode=0777):
            u'directory.'))
     else:
       raise
+
+
+def Open(path, *args, **kwargs):
+  """Opens a file (wrapper for open()), or '-' for stdin."""
+  if path == '-':
+    return contextlib.closing(sys.stdin)
+  else:
+    return open(path, *args, **kwargs)
 
 
 def _WaitForRetry(retries_left):
@@ -509,8 +558,9 @@ class TemporaryDirectory(object):
         raise
       message = (u'Got exception {0}'
                  u'while another exception was active {1} [{2}]'
-                 .format(traceback.format_exc(),
-                         prev_exc_type, prev_exc_val))
+                 .format(console_attr.DecodeFromInput(traceback.format_exc()),
+                         prev_exc_type,
+                         console_attr.DecodeFromInput(prev_exc_val)))
       raise prev_exc_type, message, prev_exc_trace
     # always return False so any exceptions will be re-raised
     return False
@@ -617,13 +667,37 @@ class Checksum(object):
     """
     return self.__files
 
+  @staticmethod
+  def FromSingleFile(input_path):
+    """Creates a Checksum containing one file.
 
-def OpenForWritingPrivate(path, access_mode='w'):
+    Args:
+      input_path: str, The file path of the contents to add.
+
+    Returns:
+      Checksum, The checksum containing the file.
+    """
+    return Checksum().AddFileContents(input_path)
+
+  @staticmethod
+  def HashSingleFile(input_path):
+    """Gets the hex digest of a single file.
+
+    Args:
+      input_path: str, The file path of the contents to add.
+
+    Returns:
+      str, The checksum digest of the file as a hex string.
+    """
+    return Checksum.FromSingleFile(input_path).HexDigest()
+
+
+def OpenForWritingPrivate(path, binary=False):
   """Open a file for writing, with the right permissions for user-private files.
 
   Args:
     path: str, The full path to the file.
-    access_mode: Can be 'w' or 'wb'. Default to 'w'.
+    binary: bool, If true forces binary mode, this only affects Windows.
 
   Returns:
     A file context manager.
@@ -637,26 +711,11 @@ def OpenForWritingPrivate(path, access_mode='w'):
   # Accommodate Windows; stolen from python2.6/tempfile.py.
   if hasattr(os, 'O_NOINHERIT'):
     flags |= os.O_NOINHERIT
+    if binary:
+      flags |= os.O_BINARY
 
   fd = os.open(path, flags, 0600)
-  return os.fdopen(fd, access_mode)
-
-
-class Context(object):
-  """Wrap a file in a context.
-
-  Some libraries return file contexts in 2.7, but not in 2.6. Wrapping the
-  returned file in this class makes it so our code works for either version.
-  """
-
-  def __init__(self, f):
-    self.__f = f
-
-  def __enter__(self):
-    return self.__f
-
-  def __exit__(self, typ, value, tb):
-    self.__f.close()
+  return os.fdopen(fd, 'w')
 
 
 class ChDir(object):

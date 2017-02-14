@@ -16,11 +16,14 @@
 import argparse
 import sys
 
-from googlecloudsdk.api_lib.compute import gaia_utils
-from googlecloudsdk.api_lib.compute import ssh_utils
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.command_lib.compute import flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
+from googlecloudsdk.command_lib.compute import ssh_utils
+from googlecloudsdk.command_lib.compute.instances import flags as instance_flags
+from googlecloudsdk.command_lib.util import gaia
+from googlecloudsdk.command_lib.util import ssh
 from googlecloudsdk.core.util import platforms
 
 
@@ -110,9 +113,9 @@ class SshGA(ssh_utils.BaseSSHCLICommand):
     parts = args.user_host.split('@')
     if len(parts) == 1:
       if self._use_accounts_service:  # Using Account Service.
-        user = gaia_utils.GetDefaultAccountName(self.http)
+        user = gaia.GetDefaultAccountName(self.http)
       else:  # Uploading keys through metadata.
-        user = ssh_utils.GetDefaultSshUsername(warn_on_account_user=True)
+        user = ssh.GetDefaultSshUsername(warn_on_account_user=True)
       instance = parts[0]
     elif len(parts) == 2:
       user, instance = parts
@@ -121,27 +124,33 @@ class SshGA(ssh_utils.BaseSSHCLICommand):
           'Expected argument of the form [USER@]INSTANCE; received [{0}].'
           .format(args.user_host))
 
-    instance_ref = self.CreateZonalReference(instance, args.zone)
+    instance_ref = instance_flags.SSH_INSTANCE_RESOLVER.ResolveResources(
+        [instance], compute_scope.ScopeEnum.ZONE, args.zone, self.resources,
+        scope_lister=flags.GetDefaultScopeLister(
+            self.compute_client, self.project))[0]
     instance = self.GetInstance(instance_ref)
     external_ip_address = ssh_utils.GetExternalIPAddress(instance)
 
-    ssh_args = [self.ssh_executable]
+    ssh_args = [self.env.ssh]
     if not args.plain:
-      ssh_args.extend(self.GetDefaultFlags())
+      ssh_args.extend(ssh.GetDefaultFlags(self.keys.key_file))
       # Allocates a tty if no command was provided and a container was provided.
       if args.container and not args.command:
         ssh_args.append('-t')
 
     if args.ssh_flag:
       for flag in args.ssh_flag:
-        dereferenced_flag = (
-            flag.replace('%USER%', user)
-            .replace('%INSTANCE%', external_ip_address))
-        ssh_args.append(dereferenced_flag)
+        for flag_part in flag.split():  # We want grouping here
+          dereferenced_flag = (
+              flag_part.replace('%USER%', user)
+              .replace('%INSTANCE%', external_ip_address))
+          ssh_args.append(dereferenced_flag)
 
-    ssh_args.extend(self.GetHostKeyArgs(args, instance))
+    host_key_alias = self.HostKeyAlias(instance)
+    ssh_args.extend(ssh.GetHostKeyArgs(host_key_alias, args.plain,
+                                       args.strict_host_key_checking))
 
-    ssh_args.append(ssh_utils.UserHost(user, external_ip_address))
+    ssh_args.append(ssh.UserHost(user, external_ip_address))
 
     if args.ssh_args:
       ssh_args.extend(args.ssh_args)
@@ -165,7 +174,8 @@ class SshGA(ssh_utils.BaseSSHCLICommand):
     # don't want to consider it an error. We do, however, want to propagate its
     # return code.
     return_code = self.ActuallyRun(
-        args, ssh_args, user, instance, strict_error_checking=False,
+        args, ssh_args, user, instance, instance_ref.project,
+        strict_error_checking=False,
         use_account_service=self._use_accounts_service)
     if return_code:
       # Can't raise an exception because we don't want any "ERROR" message

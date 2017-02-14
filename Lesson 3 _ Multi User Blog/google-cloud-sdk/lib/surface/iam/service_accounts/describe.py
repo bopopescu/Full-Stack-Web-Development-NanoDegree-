@@ -18,9 +18,9 @@ import textwrap
 
 from apitools.base.py import exceptions
 
-from googlecloudsdk.api_lib.iam import utils
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.iam import base_classes
+from googlecloudsdk.command_lib.iam import iam_util
 
 
 class Describe(base_classes.BaseIamCommand, base.DescribeCommand):
@@ -44,19 +44,15 @@ class Describe(base_classes.BaseIamCommand, base.DescribeCommand):
 
   @staticmethod
   def Args(parser):
-    parser.add_argument('account',
+    parser.add_argument('name',
                         metavar='IAM-ACCOUNT',
                         help='The service account to describe.')
 
   def Run(self, args):
     try:
-      # TODO(user): b/25212870
-      # gcloud's resource support doesn't yet work for atomic names. When it
-      # does this needs to be rewritten to use it.
-      # ref = self.ParseServiceAccount(args.account)
-      # return self.iam_client.projects_serviceAccounts.Get(ref.Request())
+      # TODO(b/25212870): use resource parsing.
       return self.iam_client.projects_serviceAccounts.Get(
           self.messages.IamProjectsServiceAccountsGetRequest(
-              name=utils.EmailToAccountResourceName(args.account)))
+              name=iam_util.EmailToAccountResourceName(args.name)))
     except exceptions.HttpError as error:
-      raise utils.ConvertToServiceAccountException(error, args.account)
+      raise iam_util.ConvertToServiceAccountException(error, args.name)

@@ -77,12 +77,14 @@ MAP = {
             class_path='googlecloudsdk.third_party.apis.appengine.v1',
             client_classpath='appengine_v1_client.AppengineV1',
             messages_modulepath='appengine_v1_messages',
-            default_version=False
+            default_version=True
         ),
-        'v1beta5': APIDef(
-            class_path='googlecloudsdk.third_party.apis.appengine.v1beta5',
-            client_classpath='appengine_v1beta5_client.AppengineV1beta5',
-            messages_modulepath='appengine_v1beta5_messages',
+    },
+    'bigquery': {
+        'v2': APIDef(
+            class_path='googlecloudsdk.third_party.apis.bigquery.v2',
+            client_classpath='bigquery_v2_client.BigqueryV2',
+            messages_modulepath='bigquery_v2_messages',
             default_version=True
         ),
     },
@@ -99,6 +101,14 @@ MAP = {
             class_path='googlecloudsdk.third_party.apis.bigtableclusteradmin.v1',
             client_classpath='bigtableclusteradmin_v1_client.BigtableclusteradminV1',
             messages_modulepath='bigtableclusteradmin_v1_messages',
+            default_version=True
+        ),
+    },
+    'bio': {
+        'v1': APIDef(
+            class_path='googlecloudsdk.third_party.apis.bio.v1',
+            client_classpath='bio_v1_client.BioV1',
+            messages_modulepath='bio_v1_messages',
             default_version=True
         ),
     },
@@ -142,6 +152,14 @@ MAP = {
             default_version=True
         ),
     },
+    'cloudkms': {
+        'v1beta1': APIDef(
+            class_path='googlecloudsdk.third_party.apis.cloudkms.v1beta1',
+            client_classpath='cloudkms_v1beta1_client.CloudkmsV1beta1',
+            messages_modulepath='cloudkms_v1beta1_messages',
+            default_version=True
+        ),
+    },
     'cloudresourcemanager': {
         'v1': APIDef(
             class_path='googlecloudsdk.third_party.apis.cloudresourcemanager.v1',
@@ -153,6 +171,12 @@ MAP = {
             class_path='googlecloudsdk.third_party.apis.cloudresourcemanager.v1beta1',
             client_classpath='cloudresourcemanager_v1beta1_client.CloudresourcemanagerV1beta1',
             messages_modulepath='cloudresourcemanager_v1beta1_messages',
+            default_version=False
+        ),
+        'v2alpha1': APIDef(
+            class_path='googlecloudsdk.third_party.apis.cloudresourcemanager.v2alpha1',
+            client_classpath='cloudresourcemanager_v2alpha1_client.CloudresourcemanagerV2alpha1',
+            messages_modulepath='cloudresourcemanager_v2alpha1_messages',
             default_version=False
         ),
     },
@@ -293,10 +317,10 @@ MAP = {
             messages_modulepath='logging_v1beta3_messages',
             default_version=True
         ),
-        'v2beta1': APIDef(
-            class_path='googlecloudsdk.third_party.apis.logging.v2beta1',
-            client_classpath='logging_v2beta1_client.LoggingV2beta1',
-            messages_modulepath='logging_v2beta1_messages',
+        'v2': APIDef(
+            class_path='googlecloudsdk.third_party.apis.logging.v2',
+            client_classpath='logging_v2_client.LoggingV2',
+            messages_modulepath='logging_v2_messages',
             default_version=False
         ),
     },
@@ -361,6 +385,14 @@ MAP = {
             class_path='googlecloudsdk.third_party.apis.source.v1',
             client_classpath='source_v1_client.SourceV1',
             messages_modulepath='source_v1_messages',
+            default_version=True
+        ),
+    },
+    'sourcerepo': {
+        'v1': APIDef(
+            class_path='googlecloudsdk.third_party.apis.sourcerepo.v1',
+            client_classpath='sourcerepo_v1_client.SourcerepoV1',
+            messages_modulepath='sourcerepo_v1_messages',
             default_version=True
         ),
     },

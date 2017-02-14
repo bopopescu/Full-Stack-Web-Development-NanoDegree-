@@ -15,43 +15,52 @@
 """This module holds common flags used by the gcloud app commands."""
 import argparse
 
+from googlecloudsdk.api_lib.app import logs_util
 from googlecloudsdk.api_lib.storage import storage_util
+from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.app import exceptions
 from googlecloudsdk.core import log
 from googlecloudsdk.core.docker import constants
 from googlecloudsdk.core.docker import docker
 from googlecloudsdk.third_party.appengine.api import appinfo
-from googlecloudsdk.third_party.appengine.api import validation
 
 SERVER_FLAG = base.Argument(
     '--server',
     help=argparse.SUPPRESS)
-
-VERSION_FLAG = base.Argument(
-    '--version',
-    required=True,
-    help='The version of the app that you want to operate on.')
-
-# TODO(user): Add service globbing.
-MODULES_ARG = base.Argument(
-    'modules',
-    nargs='+',
-    help='One or more service names to perform this action on.  To select the '
-    'default service for your app, use "default".')
-
-MODULES_OPTIONAL_ARG = base.Argument(
-    'modules',
-    nargs='*',
-    help='An optional list of service names to perform this action on.  To '
-    'select the default service for your app, use "default".  If no services '
-    'are given, all services are used.')
 
 IGNORE_CERTS_FLAG = base.Argument(
     '--ignore-bad-certs',
     action='store_true',
     default=False,
     help=argparse.SUPPRESS)
+
+SERVICE = base.Argument(
+    '--service', '-s',
+    help='Limit to specific service.',
+    required=False)
+
+VERSION = base.Argument(
+    '--version', '-v',
+    help='Limit to specific version.',
+    required=False)
+
+LEVEL = base.Argument(
+    '--level',
+    help='Filter entries with severity equal to or higher than a given level.',
+    required=False,
+    default='any',
+    choices=logs_util.LOG_LEVELS)
+
+LOGS = base.Argument(
+    '--logs',
+    help=('Filter entries from a particular set of logs. Must be a '
+          'comma-separated list of log names (request_log, stdout, stderr, '
+          'etc).'),
+    required=False,
+    default=logs_util.DEFAULT_LOGS,
+    metavar='APP_LOG',
+    type=arg_parsers.ArgList(min_length=1))
 
 
 def ValidateDockerBuildFlag(unused_value):
@@ -92,24 +101,13 @@ def GetCodeBucket(app, project):
   log.debug('No bucket specified, retrieving default bucket.')
   if not app.codeBucket:
     raise exceptions.DefaultBucketAccessError(project)
-  bucket_with_gs = 'gs://{0}/'.format(app.codeBucket)
-  return storage_util.BucketReference.FromBucketUrl(bucket_with_gs)
+  return storage_util.BucketReference.FromBucketUrl(app.codeBucket)
 
 
-def ValidateVersion(version):
-  """Check that version is in the correct format. If not, raise an error.
-
-  Args:
-    version: The version id to validate (must not be None).
-
-  Raises:
-    InvalidVersionIdError: If the version id is invalid.
-  """
-  validator = validation.Regex(appinfo.MODULE_VERSION_ID_RE_STRING)
-  try:
-    validator.Validate(version, 'version')
-  except validation.ValidationError:
-    raise exceptions.InvalidVersionIdError(version)
+VERSION_TYPE = arg_parsers.RegexpValidator(
+    appinfo.MODULE_VERSION_ID_RE_STRING,
+    'May only contain lowercase letters, digits, and hyphens. '
+    'Must begin and end with a letter or digit. Must not exceed 63 characters.')
 
 
 def ValidateImageUrl(image_url, services):

@@ -13,9 +13,6 @@
 # limitations under the License.
 """Command for setting IAM policies for service accounts."""
 
-from apitools.base.py import exceptions
-
-from googlecloudsdk.api_lib.iam import utils
 from googlecloudsdk.command_lib.iam import base_classes
 from googlecloudsdk.command_lib.iam import iam_util
 
@@ -23,8 +20,14 @@ from googlecloudsdk.command_lib.iam import iam_util
 class SetIamPolicy(base_classes.BaseIamCommand):
   """Set the IAM policy for a service account.
 
-  This command sets the IAM policy for a service account, given an IAM-ACCOUNT
-  and a file that contains the JSON encoded IAM policy.
+  This command replaces the existing IAM policy for a service account, given
+  an IAM-ACCOUNT and a file encoded in JSON or YAML that contains the IAM
+  policy. If the given policy file specifies an "etag" value, then the
+  replacement will succeed only if the policy already in place matches that
+  etag. (An etag obtained via $ gcloud iam service-accounts get-iam-policy will
+  prevent the replacement if the policy for the service account has been
+  subsequently updated.) A policy file that does not contain an etag value will
+  replace any existing policy for the service account.
   """
 
   detailed_help = iam_util.GetDetailedHelpForSetIamPolicy(
@@ -32,25 +35,21 @@ class SetIamPolicy(base_classes.BaseIamCommand):
 
   @staticmethod
   def Args(parser):
-    parser.add_argument('account',
+    parser.add_argument('name',
                         metavar='IAM-ACCOUNT',
                         help='The service account whose policy to '
                         'set.')
-    parser.add_argument('policy_file',
-                        metavar='POLICY-FILE',
-                        help='Path to a local JSON formatted file containing '
-                        'a valid policy.')
+    parser.add_argument(
+        'policy_file',
+        metavar='POLICY-FILE',
+        help='Path to a local JSON or YAML formatted file '
+        'containing a valid policy.')
 
   def Run(self, args):
-    try:
-      policy = iam_util.ParseJsonPolicyFile(
-          args.policy_file,
-          self.messages.Policy)
+    policy = iam_util.ParsePolicyFile(args.policy_file, self.messages.Policy)
 
-      return self.iam_client.projects_serviceAccounts.SetIamPolicy(
-          self.messages.IamProjectsServiceAccountsSetIamPolicyRequest(
-              resource=utils.EmailToAccountResourceName(args.account),
-              setIamPolicyRequest=self.messages.SetIamPolicyRequest(
-                  policy=policy)))
-    except exceptions.HttpError as error:
-      raise utils.ConvertToServiceAccountException(error, args.account)
+    return self.iam_client.projects_serviceAccounts.SetIamPolicy(
+        self.messages.IamProjectsServiceAccountsSetIamPolicyRequest(
+            resource=iam_util.EmailToAccountResourceName(args.name),
+            setIamPolicyRequest=self.messages.SetIamPolicyRequest(
+                policy=policy)))

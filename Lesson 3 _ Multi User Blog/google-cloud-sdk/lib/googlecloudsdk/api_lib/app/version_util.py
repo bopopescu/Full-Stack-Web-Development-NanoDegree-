@@ -17,7 +17,8 @@
 import re
 
 from googlecloudsdk.api_lib.app import metric_names
-from googlecloudsdk.api_lib.app.api import operations
+from googlecloudsdk.api_lib.app import operations_util
+from googlecloudsdk.api_lib.app import util
 from googlecloudsdk.calliope import exceptions as calliope_exceptions
 from googlecloudsdk.core import exceptions
 from googlecloudsdk.core import log
@@ -57,13 +58,15 @@ class Version(object):
                            'versions/(?P<version>.*)')
 
   def __init__(self, project, service, version_id, traffic_split=None,
-               last_deployed_time=None, version_resource=None):
+               last_deployed_time=None, environment=None,
+               version_resource=None):
     self.project = project
     self.service = service
     self.id = version_id
     self.version = version_resource
     self.traffic_split = traffic_split
     self.last_deployed_time = last_deployed_time
+    self.environment = environment
 
   @classmethod
   def FromResourcePath(cls, path):
@@ -83,14 +86,21 @@ class Version(object):
     traffic_split = service and service.split.get(version.id, 0.0)
     last_deployed = None
     try:
-      if version.creationTime:
-        last_deployed_dt = times.ParseDateTime(version.creationTime).replace(
+      if version.createTime:
+        last_deployed_dt = times.ParseDateTime(version.createTime).replace(
             microsecond=0)
         last_deployed = times.LocalizeDateTime(last_deployed_dt)
     except ValueError:
       pass
+    if version.env == 'flexible':
+      env = util.Environment.FLEX
+    elif version.vm:
+      env = util.Environment.MANAGED_VMS
+    else:
+      env = util.Environment.STANDARD
     return cls(project, service_id, version.id, traffic_split=traffic_split,
-               last_deployed_time=last_deployed, version_resource=version)
+               last_deployed_time=last_deployed, environment=env,
+               version_resource=version)
 
   def IsReceivingAllTraffic(self):
     return abs(self.traffic_split - 1.0) < self._ALL_TRAFFIC_EPSILON
@@ -199,8 +209,8 @@ def DeleteVersions(api_client, versions):
       with progress_tracker.ProgressTracker(
           'Deleting [{0}]'.format(version_path)):
         api_client.DeleteVersion(version.service, version.id)
-    except (calliope_exceptions.HttpException, operations.OperationError,
-            operations.OperationTimeoutError) as err:
+    except (calliope_exceptions.HttpException, operations_util.OperationError,
+            operations_util.OperationTimeoutError) as err:
       errors[version_path] = str(err)
 
   if errors:
@@ -279,7 +289,7 @@ def _SetDefaultVersion(new_version, api_client):
   # TODO(b/31824825): It sometimes takes a while for a new service to show up.
   # Retry it if we get a service not found error.
   def ShouldRetry(exc_type, unused_exc_value, unused_traceback, unused_state):
-    return exc_type == calliope_exceptions.HttpException
+    return issubclass(exc_type, calliope_exceptions.HttpException)
 
   try:
     retryer = retry.Retryer(max_retrials=3, exponential_sleep_multiplier=2)
@@ -294,7 +304,7 @@ def _SetDefaultVersion(new_version, api_client):
     else:
       # This shouldn't happen, but if we don't have the exception info for some
       # reason, just convert the MaxRetrialsException.
-      raise calliope_exceptions.ToolException.FromCurrent()
+      raise exceptions.InternalError()
   metrics.CustomTimedEvent(metric_names.SET_DEFAULT_VERSION_API)
 
 
@@ -328,7 +338,7 @@ def _StopPreviousVersionIfApplies(old_default_version, api_client):
             old_default_version))
     return
 
-  log.status.Print('Stopping version [{0}].')
+  log.status.Print('Stopping version [{0}].'.format(old_default_version))
   try:
     # We don't block here because stopping the previous version adds a long time
     # (reports of 2.5 minutes) to deployment. The risk is that if we don't wait,
@@ -338,8 +348,9 @@ def _StopPreviousVersionIfApplies(old_default_version, api_client):
         service_name=old_default_version.service,
         version_id=old_default_version.id,
         block=False)
-  except (calliope_exceptions.HttpException, operations.OperationError,
-          operations.OperationTimeoutError) as err:
+  except (calliope_exceptions.HttpException,
+          operations_util.OperationError,
+          operations_util.OperationTimeoutError) as err:
     log.warn('Error stopping version [{0}]: {1}'.format(old_default_version,
                                                         str(err)))
     log.warn('Version [{0}] is still running and you must stop or delete it '
@@ -351,6 +362,6 @@ def _StopPreviousVersionIfApplies(old_default_version, api_client):
     log.status.Print(
         'Sent request to stop version [{0}]. This operation may take some time '
         'to complete. If you would like to verify that it succeeded, run:\n'
-        '  $ gcloud app versions describe {0}\n'
+        '  $ gcloud app versions describe -s {0.service} {0.id}\n'
         'until it shows that the version has stopped.'.format(
             old_default_version))

@@ -24,7 +24,7 @@ from googlecloudsdk.core import exceptions as core_exceptions
 
 CSEK_HELP_URL = ('https://cloud.google.com/compute/docs/disks/'
                  'customer-supplied-encryption')
-EXPECTED_RECORD_KEY_KEYS = set(['uri', 'key', 'key-type'])
+EXPECTED_RECORD_KEY_KEYS = {'uri', 'key', 'key-type'}
 BASE64_RAW_KEY_LENGTH_IN_CHARS = 44
 BASE64_RSA_ENCRYPTED_KEY_LENGTH_IN_CHARS = 344
 
@@ -120,7 +120,7 @@ def ValidateKey(base64_encoded_string, expected_key_length):
 
 
 class CsekKeyBase(object):
-  """A class representing for Csek keys."""
+  """A class representing for CSEK keys."""
 
   __metaclass__ = abc.ABCMeta
 
@@ -163,7 +163,8 @@ class CsekKeyBase(object):
     raise NotImplementedError('GetKeyLength() must be overridden.')
 
   @abc.abstractmethod
-  def ToMessage(self):
+  def ToMessage(self, compute_client):
+    del compute_client
     raise NotImplementedError('ToMessage() must be overridden.')
 
   @property
@@ -172,7 +173,7 @@ class CsekKeyBase(object):
 
 
 class CsekRawKey(CsekKeyBase):
-  """Class representing raw Csek keys."""
+  """Class representing raw CSEK keys."""
 
   def GetKeyLength(self):
     return BASE64_RAW_KEY_LENGTH_IN_CHARS
@@ -183,7 +184,7 @@ class CsekRawKey(CsekKeyBase):
 
 
 class CsekRsaEncryptedKey(CsekKeyBase):
-  """Class representing rsa encrypted Csek keys."""
+  """Class representing rsa encrypted CSEK keys."""
 
   def GetKeyLength(self):
     return BASE64_RSA_ENCRYPTED_KEY_LENGTH_IN_CHARS
@@ -212,7 +213,7 @@ class MissingCsekKeyException(exceptions.ToolException):
         'Key required for resource [{0}], but none found.'.format(resource))
 
 
-def AddCsekKeyArgs(parser, flags_about_creation=True):
+def AddCsekKeyArgs(parser, flags_about_creation=True, resource_type='resource'):
   """Adds arguments related to csek keys."""
   csek_key_file = parser.add_argument(
       '--csek-key-file',
@@ -220,9 +221,10 @@ def AddCsekKeyArgs(parser, flags_about_creation=True):
       metavar='FILE')
   csek_key_file.detailed_help = (
       'Path to a Customer-Supplied Encryption Key (CSEK) key file, mapping '
-      'Google Compute Engine resources to user managed keys to be used when '
+      'Google Compute Engine {resource}s to user managed keys to be used when '
       'creating, mounting, or snapshotting disks. '
-      'See {0} for more details.').format(CSEK_HELP_URL)
+      'See {csek_help} for more details.').format(resource=resource_type,
+                                                  csek_help=CSEK_HELP_URL)
   # TODO(user)
   # Argument - indicates the key file should be read from stdin.'
 
@@ -231,15 +233,17 @@ def AddCsekKeyArgs(parser, flags_about_creation=True):
         '--require-csek-key-create',
         action='store_true',
         default=True,
-        help='Create resources protected by csek key.')
+        help='Create {resource}s protected by csek key.'.format(
+            resource=resource_type))
     require_csek_key_create.detailed_help = (
-        'Refuse to create resources not protected by a user managed key in the '
-        'key file when --csek-key-file is given. This behavior is enabled by '
-        'default to prevent incorrect gcloud invocations from accidentally '
-        'creating resources with no user managed key. Disabling the check '
-        'allows creation of some resources without a matching '
+        'Refuse to create {resource}s not protected by a user managed key in '
+        'the key file when --csek-key-file is given. This behavior is enabled '
+        'by default to prevent incorrect gcloud invocations from accidentally '
+        'creating {resource}s with no user managed key. Disabling the check '
+        'allows creation of some {resource}s without a matching '
         'Customer-Supplied Encryption Key in the supplied --csek-key-file. '
-        'See {0} for more details').format(CSEK_HELP_URL)
+        'See {csek_help} for more details').format(resource=resource_type,
+                                                   csek_help=CSEK_HELP_URL)
 
 
 class UriPattern(object):
@@ -388,7 +392,7 @@ class CsekKeyStore(object):
         # TODO(user) what's the best thing to do if there are multiple
         # matches?
         if search_state[0]:
-          raise exceptions.InvalidKeyFileException(
+          raise InvalidKeyFileException(
               'Uri patterns [{0}] and [{1}] both match '
               'resource [{2}].  Bailing out.'.format(
                   search_state[0], pat, str(resource)))
@@ -443,4 +447,3 @@ def MaybeLookupKeyMessagesByUri(csek_keys_or_none, parser,
                                 uris, compute_client):
   return [MaybeToMessage(k, compute_client) for k in
           MaybeLookupKeysByUri(csek_keys_or_none, parser, uris)]
-

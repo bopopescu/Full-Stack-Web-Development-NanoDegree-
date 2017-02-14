@@ -17,10 +17,11 @@
 from googlecloudsdk.api_lib.compute import base_classes
 from googlecloudsdk.api_lib.compute import zone_utils
 from googlecloudsdk.command_lib.compute import flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
 from googlecloudsdk.command_lib.compute.instance_groups import flags as instance_groups_flags
 
 
-class Create(base_classes.BaseAsyncCreator, zone_utils.ZoneResourceFetcher):
+class Create(base_classes.BaseAsyncCreator):
   """Create Google Compute Engine unmanaged instance groups."""
 
   @staticmethod
@@ -55,10 +56,11 @@ class Create(base_classes.BaseAsyncCreator, zone_utils.ZoneResourceFetcher):
     group_ref = (
         instance_groups_flags.ZONAL_INSTANCE_GROUP_ARG.ResolveAsResource(
             args, self.resources,
-            default_scope=flags.ScopeEnum.ZONE,
+            default_scope=compute_scope.ScopeEnum.ZONE,
             scope_lister=flags.GetDefaultScopeLister(
                 self.compute_client, self.project)))
-    self.WarnForZonalCreation([group_ref])
+    zone_resource_fetcher = zone_utils.ZoneResourceFetcher(self.compute_client)
+    zone_resource_fetcher.WarnForZonalCreation([group_ref])
 
     request = self.messages.ComputeInstanceGroupsInsertRequest(
         instanceGroup=self.messages.InstanceGroup(

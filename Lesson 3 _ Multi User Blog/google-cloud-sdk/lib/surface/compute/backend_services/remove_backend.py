@@ -14,15 +14,17 @@
 
 """Command for removing a backend from a backend service."""
 
+import copy
+
 from googlecloudsdk.api_lib.compute import backend_services_utils
 from googlecloudsdk.api_lib.compute import base_classes
 from googlecloudsdk.api_lib.compute import instance_groups_utils
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.command_lib.compute import flags as compute_flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
 from googlecloudsdk.command_lib.compute.backend_services import backend_flags
 from googlecloudsdk.command_lib.compute.backend_services import flags
-from googlecloudsdk.third_party.py27 import py27_copy as copy
 
 
 @base.ReleaseTracks(base.ReleaseTrack.GA)
@@ -37,14 +39,13 @@ class RemoveBackend(base_classes.ReadWriteCommand):
   capacity scaler to zero through 'gcloud compute
   backend-services edit'.
   """
-  _BACKEND_SERVICE_ARG = flags.GLOBAL_BACKEND_SERVICE_ARG
+  _BACKEND_SERVICE_ARG = flags.GLOBAL_REGIONAL_BACKEND_SERVICE_ARG
 
   @classmethod
   def Args(cls, parser):
     cls._BACKEND_SERVICE_ARG.AddArgument(parser)
     backend_flags.AddInstanceGroup(
-        parser, operation_type='remove from', multizonal=False,
-        with_deprecated_zone=True)
+        parser, operation_type='remove from', with_deprecated_zone=True)
 
   @property
   def service(self):
@@ -61,7 +62,7 @@ class RemoveBackend(base_classes.ReadWriteCommand):
   def CreateReference(self, args):
     return self._BACKEND_SERVICE_ARG.ResolveAsResource(
         args, self.resources,
-        default_scope=compute_flags.ScopeEnum.GLOBAL)
+        default_scope=compute_scope.ScopeEnum.GLOBAL)
 
   def GetGetRequest(self, args):
     if self.regional:
@@ -94,10 +95,16 @@ class RemoveBackend(base_classes.ReadWriteCommand):
                 project=self.project))
 
   def CreateGroupReference(self, args):
-    return self.CreateZonalReference(
-        args.instance_group,
-        args.instance_group_zone,
-        resource_type='instanceGroups')
+    return instance_groups_utils.CreateInstanceGroupReference(
+        scope_prompter=self,
+        compute=self.compute,
+        resources=self.resources,
+        name=args.instance_group,
+        region=args.instance_group_region,
+        zone=(args.instance_group_zone
+              if args.instance_group_zone else args.zone),
+        zonal_resource_type='instanceGroups',
+        regional_resource_type='regionInstanceGroups')
 
   def Modify(self, args, existing):
     backend_flags.WarnOnDeprecatedFlags(args)
@@ -132,7 +139,7 @@ class RemoveBackend(base_classes.ReadWriteCommand):
     return replacement
 
   def Run(self, args):
-    self.regional = backend_services_utils.IsRegionalRequest(self, args)
+    self.regional = backend_services_utils.IsRegionalRequest(args)
     return super(RemoveBackend, self).Run(args)
 
 
@@ -149,23 +156,22 @@ class RemoveBackendBeta(RemoveBackend):
   backend-services edit'.
   """
 
-  _BACKEND_SERVICE_ARG = flags.GLOBAL_REGIONAL_BACKEND_SERVICE_ARG
-
   @classmethod
   def Args(cls, parser):
     cls._BACKEND_SERVICE_ARG.AddArgument(parser)
     backend_flags.AddInstanceGroup(
-        parser, operation_type='remove from', multizonal=True,
-        with_deprecated_zone=True)
+        parser, operation_type='remove from', with_deprecated_zone=True)
 
   def CreateGroupReference(self, args):
+    """Overrides."""
     return instance_groups_utils.CreateInstanceGroupReference(
         scope_prompter=self,
         compute=self.compute,
         resources=self.resources,
         name=args.instance_group,
         region=args.instance_group_region,
-        zone=args.instance_group_zone,
+        zone=(args.instance_group_zone
+              if args.instance_group_zone else args.zone),
         zonal_resource_type='instanceGroups',
         regional_resource_type='regionInstanceGroups')
 
@@ -186,5 +192,14 @@ class RemoveBackendAlpha(RemoveBackendBeta):
   @classmethod
   def Args(cls, parser):
     cls._BACKEND_SERVICE_ARG.AddArgument(parser)
-    backend_flags.AddInstanceGroup(
-        parser, operation_type='remove from', multizonal=True)
+    flags.MULTISCOPE_INSTANCE_GROUP_ARG.AddArgument(
+        parser, operation_type='remove')
+
+  def CreateGroupReference(self, args):
+    """Overrides."""
+    holder = base_classes.ComputeApiHolder(self.ReleaseTrack())
+    return flags.MULTISCOPE_INSTANCE_GROUP_ARG.ResolveAsResource(
+        args, holder.resources,
+        default_scope=compute_scope.ScopeEnum.ZONE,
+        scope_lister=compute_flags.GetDefaultScopeLister(
+            holder.client, self.project))

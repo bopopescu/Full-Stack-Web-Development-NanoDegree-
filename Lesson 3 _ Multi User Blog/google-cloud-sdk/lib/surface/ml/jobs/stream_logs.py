@@ -12,16 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ml jobs showlogs command."""
-
-import datetime
-
-from dateutil import tz
-from googlecloudsdk.api_lib.ml import jobs
 from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.logs import stream
 from googlecloudsdk.command_lib.ml import flags
+from googlecloudsdk.command_lib.ml import log_utils
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
 class StreamLogs(base.Command):
   """Show logs from a running Cloud ML job."""
 
@@ -31,10 +27,16 @@ class StreamLogs(base.Command):
     flags.JOB_NAME.AddToParser(parser)
     flags.POLLING_INTERVAL.AddToParser(parser)
     flags.ALLOW_MULTILINE_LOGS.AddToParser(parser)
+    flags.TASK_NAME.AddToParser(parser)
 
   def Run(self, args):
     """Run the stream-logs command."""
-    return jobs.StreamLogs(args)
+    log_fetcher = stream.LogFetcher(
+        filters=log_utils.LogFilters(args.job, args.task_name),
+        polling_interval=args.polling_interval,
+        continue_func=log_utils.MakeContinueFunction(args.job))
+    return log_utils.SplitMultiline(
+        log_fetcher.YieldLogs(), allow_multiline=args.allow_multiline_logs)
 
   def Format(self, args):
     """Returns the default formatting for the command.
@@ -48,10 +50,4 @@ class StreamLogs(base.Command):
     Returns:
       Some value that we want to have printed later.
     """
-    tz_name = datetime.datetime.now(tz.tzlocal()).tzname()
-    return 'value({fields})'.format(fields=','.join(
-        ['severity:label=SEVERITY',
-         'timestamp.date("%m-%d %H:%M:%S%Z",tz={}):label=TIMESTAMP'.
-         format(tz_name),
-         'task_name:label=TASK_NAME', 'trial_id:label=TRIAL_ID',
-         'message:label=MESSAGE']))
+    return log_utils.LOG_FORMAT

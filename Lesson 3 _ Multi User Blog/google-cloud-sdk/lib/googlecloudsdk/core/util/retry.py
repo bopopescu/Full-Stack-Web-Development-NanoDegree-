@@ -14,20 +14,15 @@
 
 """Implementation of retrying logic."""
 
+import collections
 import functools
 import itertools
 import random
 import sys
 import time
 
-from googlecloudsdk.third_party.py27 import py27_collections as collections
-
 
 _DEFAULT_JITTER_MS = 1000
-
-
-# TODO(user): replace retry logic elsewhere
-# (appengine/lib, compute, bigquery ...) with this implementation.
 
 
 class RetryerState(object):
@@ -201,7 +196,7 @@ class Retryer(object):
     args = args if args is not None else ()
     kwargs = kwargs if kwargs is not None else {}
 
-    start_time_ms = int(time.time() * 1000)
+    start_time_ms = _GetCurrentTimeMs()
     retrial = 0
     if callable(should_retry_if):
       should_retry = should_retry_if
@@ -215,7 +210,7 @@ class Retryer(object):
 
     while True:
       result = func(*args, **kwargs)
-      time_passed_ms = int(time.time() * 1000) - start_time_ms
+      time_passed_ms = _GetCurrentTimeMs() - start_time_ms
       try:
         sleep_from_gen = sleep_gen.next()
       except StopIteration:
@@ -232,7 +227,7 @@ class Retryer(object):
       if self._status_update_func:
         self._status_update_func(result, state)
       self._RaiseIfStop(result, state)
-      time.sleep(time_to_wait_ms / 1000.0)
+      _SleepMs(time_to_wait_ms)
       retrial += 1
 
 
@@ -290,3 +285,12 @@ def RetryOnException(f=None, max_retrials=None, max_wait_ms=None,
       raise to_reraise[0], to_reraise[1], to_reraise[2]
 
   return DecoratedFunction
+
+
+def _GetCurrentTimeMs():
+  return int(time.time() * 1000)
+
+
+def _SleepMs(time_to_wait_ms):
+  time.sleep(time_to_wait_ms / 1000.0)
+

@@ -90,9 +90,11 @@ def Prompts(usage_reporting):
       else:
         print("""
 To help improve the quality of this product, we collect anonymized usage data
- and anonymized stacktraces when crashes are encountered.. You may choose to opt
- out of this collection now (by choosing 'N' at the below prompt), or at any
- time in the future by running the following command:
+and anonymized stacktraces when crashes are encountered; additional information
+is available at <https://cloud.google.com/sdk/usage-statistics>. You may choose
+to opt out of this collection now (by choosing 'N' at the below prompt), or at
+any time in the future by running the following command:
+
     gcloud config set disable_usage_reporting true
 """)
 
@@ -182,7 +184,7 @@ def main():
         Install(pargs.override_components, pargs.additional_components)
 
       platforms_install.UpdateRC(
-          command_completion=pargs.command_completion,
+          completion_update=pargs.command_completion,
           path_update=pargs.path_update,
           rc_path=pargs.rc_path,
           bin_path=bootstrapping.BIN_DIR,

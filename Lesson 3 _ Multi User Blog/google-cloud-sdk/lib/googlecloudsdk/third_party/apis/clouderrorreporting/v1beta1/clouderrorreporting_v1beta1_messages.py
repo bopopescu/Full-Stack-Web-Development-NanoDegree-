@@ -41,6 +41,9 @@ class ClouderrorreportingProjectsEventsListRequest(_messages.Message):
       project. Written as `projects/` plus the [Google Cloud Platform project
       ID](https://support.google.com/cloud/answer/6158840). Example: `projects
       /my-project-123`.
+    serviceFilter_resourceType: [Optional] The exact value to match against
+      [`ServiceContext.resource_type`](/error-
+      reporting/reference/rest/v1beta1/ServiceContext#FIELDS.resource_type).
     serviceFilter_service: [Optional] The exact value to match against
       [`ServiceContext.service`](/error-
       reporting/reference/rest/v1beta1/ServiceContext#FIELDS.service).
@@ -72,9 +75,10 @@ class ClouderrorreportingProjectsEventsListRequest(_messages.Message):
   pageSize = _messages.IntegerField(2, variant=_messages.Variant.INT32)
   pageToken = _messages.StringField(3)
   projectName = _messages.StringField(4, required=True)
-  serviceFilter_service = _messages.StringField(5)
-  serviceFilter_version = _messages.StringField(6)
-  timeRange_period = _messages.EnumField('TimeRangePeriodValueValuesEnum', 7)
+  serviceFilter_resourceType = _messages.StringField(5)
+  serviceFilter_service = _messages.StringField(6)
+  serviceFilter_version = _messages.StringField(7)
+  timeRange_period = _messages.EnumField('TimeRangePeriodValueValuesEnum', 8)
 
 
 class ClouderrorreportingProjectsEventsReportRequest(_messages.Message):
@@ -110,8 +114,6 @@ class ClouderrorreportingProjectsGroupStatsListRequest(_messages.Message):
     alignmentTime: [Optional] Time where the timed counts shall be aligned if
       rounded alignment is chosen. Default is 00:00 UTC.
     groupId: [Optional] List all <code>ErrorGroupStats</code> with these IDs.
-      If not specified, all error group stats with a non-zero error count for
-      the given selection criteria are returned.
     order: [Optional] The sort order in which the results are returned.
       Default is `COUNT_DESC`.
     pageSize: [Optional] The maximum number of results to return per response.
@@ -123,6 +125,9 @@ class ClouderrorreportingProjectsGroupStatsListRequest(_messages.Message):
       project. Written as <code>projects/</code> plus the <a
       href="https://support.google.com/cloud/answer/6158840">Google Cloud
       Platform project ID</a>.  Example: <code>projects/my-project-123</code>.
+    serviceFilter_resourceType: [Optional] The exact value to match against
+      [`ServiceContext.resource_type`](/error-
+      reporting/reference/rest/v1beta1/ServiceContext#FIELDS.resource_type).
     serviceFilter_service: [Optional] The exact value to match against
       [`ServiceContext.service`](/error-
       reporting/reference/rest/v1beta1/ServiceContext#FIELDS.service).
@@ -189,10 +194,11 @@ class ClouderrorreportingProjectsGroupStatsListRequest(_messages.Message):
   pageSize = _messages.IntegerField(5, variant=_messages.Variant.INT32)
   pageToken = _messages.StringField(6)
   projectName = _messages.StringField(7, required=True)
-  serviceFilter_service = _messages.StringField(8)
-  serviceFilter_version = _messages.StringField(9)
-  timeRange_period = _messages.EnumField('TimeRangePeriodValueValuesEnum', 10)
-  timedCountDuration = _messages.StringField(11)
+  serviceFilter_resourceType = _messages.StringField(8)
+  serviceFilter_service = _messages.StringField(9)
+  serviceFilter_version = _messages.StringField(10)
+  timeRange_period = _messages.EnumField('TimeRangePeriodValueValuesEnum', 11)
+  timedCountDuration = _messages.StringField(12)
 
 
 class ClouderrorreportingProjectsGroupsGetRequest(_messages.Message):
@@ -278,32 +284,33 @@ class ErrorGroup(_messages.Message):
 
 
 class ErrorGroupStats(_messages.Message):
-  """Data extracted for a specific group based on certain selection criteria,
+  """Data extracted for a specific group based on certain filter criteria,
   such as a given time period and/or service filter.
 
   Fields:
     affectedServices: Service contexts with a non-zero error count for the
-      given selection criteria. This list can be truncated if multiple
-      services are affected. Refer to `num_affected_services` for the total
-      count.
+      given filter criteria. This list can be truncated if multiple services
+      are affected. Refer to `num_affected_services` for the total count.
     affectedUsersCount: Approximate number of affected users in the given
-      group that match the selection criteria. Users are distinguished by data
-      in the `ErrorContext` of the individual error events, such as their
-      login name or their remote IP address in case of HTTP requests. The
-      number of affected users can be zero even if the number of errors is
-      non-zero if no data was provided from which the affected user could be
-      deduced. Users are counted based on data in the request context that was
-      provided in the error report. If more users are implicitly affected,
-      such as due to a crash of the whole service, this is not reflected here.
+      group that match the filter criteria. Users are distinguished by data in
+      the `ErrorContext` of the individual error events, such as their login
+      name or their remote IP address in case of HTTP requests. The number of
+      affected users can be zero even if the number of errors is non-zero if
+      no data was provided from which the affected user could be deduced.
+      Users are counted based on data in the request context that was provided
+      in the error report. If more users are implicitly affected, such as due
+      to a crash of the whole service, this is not reflected here.
     count: Approximate total number of events in the given group that match
-      the selection criteria.
-    firstSeenTime: Approximate first occurrence that was seen for this group
-      and which matches the given selection criteria.
-    group: Group data that is independent of the selection criteria.
-    lastSeenTime: Approximate last occurrence that was seen for this group and
-      which matches the given selection criteria.
+      the filter criteria.
+    firstSeenTime: Approximate first occurrence that was ever seen for this
+      group and which matches the given filter criteria, ignoring the
+      time_range that was specified in the request.
+    group: Group data that is independent of the filter criteria.
+    lastSeenTime: Approximate last occurrence that was ever seen for this
+      group and which matches the given filter criteria, ignoring the
+      time_range that was specified in the request.
     numAffectedServices: The total number of services with a non-zero error
-      count for the given selection criteria.
+      count for the given filter criteria.
     representative: An arbitrary event that is chosen as representative for
       the whole group. The representative event is intended to be used as a
       quick preview for the whole group. Events in the group are usually
@@ -358,10 +365,13 @@ class ListEventsResponse(_messages.Message):
     nextPageToken: If non-empty, more results are available. Pass this token,
       along with the same query parameters as the first request, to view the
       next page of results.
+    timeRangeBegin: The timestamp specifies the start time to which the
+      request was restricted.
   """
 
   errorEvents = _messages.MessageField('ErrorEvent', 1, repeated=True)
   nextPageToken = _messages.StringField(2)
+  timeRangeBegin = _messages.StringField(3)
 
 
 class ListGroupStatsResponse(_messages.Message):
@@ -372,10 +382,15 @@ class ListGroupStatsResponse(_messages.Message):
     nextPageToken: If non-empty, more results are available. Pass this token,
       along with the same query parameters as the first request, to view the
       next page of results.
+    timeRangeBegin: The timestamp specifies the start time to which the
+      request was restricted. The start time is set based on the requested
+      time range. It may be adjusted to a later time if a project has exceeded
+      the storage quota and older data has been deleted.
   """
 
   errorGroupStats = _messages.MessageField('ErrorGroupStats', 1, repeated=True)
   nextPageToken = _messages.StringField(2)
+  timeRangeBegin = _messages.StringField(3)
 
 
 class ReportErrorEventResponse(_messages.Message):
@@ -394,10 +409,27 @@ class ReportedErrorEvent(_messages.Message):
     eventTime: [Optional] Time when the event occurred. If not provided, the
       time when the event was received by the Error Reporting system will be
       used.
-    message: [Required] A message describing the error. The message can
-      contain an exception stack in one of the supported programming languages
-      and formats. In that case, the message is parsed and detailed exception
-      information is returned when retrieving the error event again.
+    message: [Required] The error message. If no `context.reportLocation` is
+      provided, the message must contain a header (typically consisting of the
+      exception type name and an error message) and an exception stack trace
+      in one of the supported programming languages and formats. Supported
+      languages are Java, Python, JavaScript, Ruby, C#, PHP, and Go. Supported
+      stack trace formats are:  * **Java**: Must be the return value of [`Thro
+      wable.printStackTrace()`](https://docs.oracle.com/javase/7/docs/api/java
+      /lang/Throwable.html#printStackTrace%28%29). * **Python**: Must be the
+      return value of [`traceback.format_exc()`](https://docs.python.org/2/lib
+      rary/traceback.html#traceback.format_exc). * **JavaScript**: Must be the
+      value of [`error.stack`](https://github.com/v8/v8/wiki/Stack-Trace-API)
+      as returned by V8. * **Ruby**: Must contain frames returned by
+      [`Exception.backtrace`](https://ruby-
+      doc.org/core-2.2.0/Exception.html#method-i-backtrace). * **C#**: Must be
+      the return value of [`Exception.ToString()`](https://msdn.microsoft.com
+      /en-us/library/system.exception.tostring.aspx). * **PHP**: Must start
+      with `PHP (Notice|Parse error|Fatal error|Warning)` and contain the
+      result of
+      [`(string)$exception`](http://php.net/manual/en/exception.tostring.php).
+      * **Go**: Must be the return value of
+      [`runtime.Stack()`](https://golang.org/pkg/runtime/debug/#Stack).
     serviceContext: [Required] The service context in which this error has
       occurred.
   """
@@ -413,6 +445,10 @@ class ServiceContext(_messages.Message):
   time and multiple versions can run in parallel.
 
   Fields:
+    resourceType: Type of the MonitoredResource. List of possible values:
+      https://cloud.google.com/monitoring/api/resources  Value is set
+      automatically for incoming errors and must not be set when reporting
+      errors.
     service: An identifier of the service, such as the name of the executable,
       job, or Google App Engine service name. This field is expected to have a
       low number of values that are relatively stable over time, as opposed to
@@ -423,8 +459,9 @@ class ServiceContext(_messages.Message):
       which could represent a version label or a Git SHA-1 hash, for example.
   """
 
-  service = _messages.StringField(1)
-  version = _messages.StringField(2)
+  resourceType = _messages.StringField(1)
+  service = _messages.StringField(2)
+  version = _messages.StringField(3)
 
 
 class SourceLocation(_messages.Message):

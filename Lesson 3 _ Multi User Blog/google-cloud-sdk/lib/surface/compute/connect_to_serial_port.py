@@ -18,12 +18,14 @@ import argparse
 import getpass
 import sys
 
-from googlecloudsdk.api_lib.compute import ssh_utils
-
 from googlecloudsdk.calliope import arg_parsers
-from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.command_lib.compute import flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
+from googlecloudsdk.command_lib.compute import ssh_utils
+from googlecloudsdk.command_lib.compute.instances import flags as instance_flags
+from googlecloudsdk.command_lib.util import ssh
+
 from googlecloudsdk.core import http
 from googlecloudsdk.core import log
 
@@ -38,9 +40,10 @@ DEFAULT_HOST_KEY = ('ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDkOOCaBZVTxzvjJ7+7'
                     'lwcwO1ulpVB0sTIdB7Bu+YPuo1XSuL2n3tXA9n9S+7kQCoyuXodeBpJo'
                     'JxzdJeoQXAepLrLA7nl6jRiYZyic0WJeSJm7vmvl1VDAGkyXloNEhBnv'
                     'oQFQl5aCwcS8UQnzzwMDflQ+JgsynYN08dLIRGcwkJe9')
+SERIAL_PORT_HELP = ('https://cloud.google.com/compute/docs/'
+                    'instances/interacting-with-serial-console')
 
 
-@base.ReleaseTracks(base.ReleaseTrack.ALPHA, base.ReleaseTrack.BETA)
 class ConnectToSerialPort(ssh_utils.BaseSSHCLICommand):
   """Class for connecting through a gateway to the interactive serial port."""
 
@@ -68,7 +71,7 @@ class ConnectToSerialPort(ssh_utils.BaseSSHCLICommand):
         help='Specifies the user/instance for the serial port connection',
         metavar='[USER@]INSTANCE')
     user_host.detailed_help = """\
-        Specifies the user/instance to for the serial port connection.
+        Specifies the user/instance for the serial port connection.
 
         ``USER'' specifies the username to authenticate as. If omitted,
         the current OS user is selected.
@@ -80,6 +83,8 @@ class ConnectToSerialPort(ssh_utils.BaseSSHCLICommand):
               'Can be 1-4, default is 1.'),
         type=arg_parsers.BoundedInt(1, 4))
     port.detailed_help = """\
+        The number of the requested serial port. Can be 1-4, default is 1.
+
         Instances can support up to four serial ports. By default, this
         command will connect to the first serial port. Setting this flag
         will connect to the requested serial port.
@@ -93,8 +98,9 @@ class ConnectToSerialPort(ssh_utils.BaseSSHCLICommand):
         metavar='KEY=VALUE')
     extra_args.detailed_help = """\
         Optional arguments can be passed to the serial port connection by
-        passing key-value pairs to this flag.
-        """
+        passing key-value pairs to this flag, such as max-connections=N or
+        replay-lines=N. See {0} for additional options.
+        """.format(SERIAL_PORT_HELP)
 
     parser.add_argument(
         '--serial-port-gateway',
@@ -125,19 +131,20 @@ class ConnectToSerialPort(ssh_utils.BaseSSHCLICommand):
       http_client = http.Http()
       http_response = http_client.request(HOST_KEY_URL)
       hostname = '[{0}]:{1}'.format(SERIAL_PORT_GATEWAY, CONNECTION_PORT)
+      known_hosts = ssh.KnownHosts.FromDefaultFile()
       if http_response[0]['status'] == '200':
         host_key = http_response[1].strip()
-        ssh_utils.UpdateKnownHostsFile(self.known_hosts_file, hostname,
-                                       host_key, overwrite_keys=True)
-      elif self.IsHostKeyAliasInKnownHosts(hostname):
+        known_hosts.Add(hostname, host_key, overwrite=True)
+        known_hosts.Write()
+      elif known_hosts.ContainsAlias(hostname):
         log.warn('Unable to download and update Host Key for [{0}] from [{1}]. '
                  'Attempting to connect using existing Host Key in [{2}]. If '
                  'the connection fails, please try again to update the Host '
                  'Key.'.format(SERIAL_PORT_GATEWAY, HOST_KEY_URL,
-                               self.known_hosts_file))
+                               known_hosts.file_path))
       else:
-        ssh_utils.UpdateKnownHostsFile(self.known_hosts_file, hostname,
-                                       DEFAULT_HOST_KEY)
+        known_hosts.Add(hostname, DEFAULT_HOST_KEY)
+        known_hosts.Write()
         log.warn('Unable to download Host Key for [{0}] from [{1}]. To ensure '
                  'the security of the SSH connetion, gcloud will attempt to '
                  'connect using a hard-coded Host Key value. If the connection '
@@ -145,12 +152,15 @@ class ConnectToSerialPort(ssh_utils.BaseSSHCLICommand):
                  'updating gcloud and connecting again.'
                  .format(SERIAL_PORT_GATEWAY, HOST_KEY_URL))
 
-    instance_ref = self.CreateZonalReference(instance, args.zone)
+    instance_ref = instance_flags.SSH_INSTANCE_RESOLVER.ResolveResources(
+        [instance], compute_scope.ScopeEnum.ZONE, args.zone, self.resources,
+        scope_lister=flags.GetDefaultScopeLister(
+            self.compute_client, self.project))[0]
     instance = self.GetInstance(instance_ref)
 
-    ssh_args = [self.ssh_executable]
+    ssh_args = [self.env.ssh]
 
-    ssh_args.extend(self.GetDefaultFlags())
+    ssh_args.extend(ssh.GetDefaultFlags(self.keys.key_file))
     if args.serial_port_gateway == SERIAL_PORT_GATEWAY:
       ssh_args.extend(['-o', 'StrictHostKeyChecking=yes'])
 
@@ -168,18 +178,20 @@ class ConnectToSerialPort(ssh_utils.BaseSSHCLICommand):
       for k, v in args.extra_args.items():
         constructed_username_list.append('{0}={1}'.format(k, v))
 
-    ssh_args.append(ssh_utils.UserHost('.'.join(constructed_username_list),
-                                       args.serial_port_gateway))
+    ssh_args.append(ssh.UserHost('.'.join(constructed_username_list),
+                                 args.serial_port_gateway))
 
     log.info('ssh command: {0}'.format(' '.join(ssh_args)))
 
     # Don't wait for the instance to become SSHable. We are not connecting to
     # the instance itself through SSH, so the instance doesn't need to have
-    # fully booted to connect to the serial port.
+    # fully booted to connect to the serial port. Also, ignore exit code 255,
+    # since the normal way to terminate the serial port connection is ~. and
+    # that causes ssh to exit with 255.
     return_code = self.ActuallyRun(
-        args, ssh_args, user, instance,
+        args, ssh_args, user, instance, instance_ref.project,
         strict_error_checking=False, use_account_service=False,
-        wait_for_sshable=False)
+        wait_for_sshable=False, ignore_ssh_errors=True)
     if return_code:
       sys.exit(return_code)
 

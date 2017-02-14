@@ -13,21 +13,21 @@
 # limitations under the License.
 
 """Describe operation command."""
-
+from googlecloudsdk.api_lib.dataproc import util
 from googlecloudsdk.calliope import base
 
 
 class Describe(base.DescribeCommand):
-  """View the details of an operation."""
+  """View the details of an operation.
 
-  detailed_help = {
-      'DESCRIPTION': '{description}',
-      'EXAMPLES': """\
-          To view the details of an operation, run:
+  View the details of an operation.
 
-            $ {command} operation_id
-          """,
-  }
+  ## EXAMPLES
+
+  To view the details of an operation, run:
+
+    $ {command} operation_id
+  """
 
   @staticmethod
   def Args(parser):
@@ -38,8 +38,10 @@ class Describe(base.DescribeCommand):
     client = self.context['dataproc_client']
     messages = self.context['dataproc_messages']
 
+    operation_ref = util.ParseOperation(args.operation, self.context)
+
     request = messages.DataprocProjectsRegionsOperationsGetRequest(
-        name=args.operation)
+        name=operation_ref.RelativeName())
 
     operation = client.projects_regions_operations.Get(request)
     return operation

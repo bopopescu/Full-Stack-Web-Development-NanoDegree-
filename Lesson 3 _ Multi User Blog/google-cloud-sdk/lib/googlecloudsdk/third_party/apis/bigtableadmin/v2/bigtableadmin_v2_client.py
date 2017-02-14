@@ -35,7 +35,6 @@ class BigtableadminV2(base_api.BaseApiClient):
         default_global_params=default_global_params,
         additional_http_headers=additional_http_headers)
     self.operations = self.OperationsService(self)
-    self.projects_instances_clusters_snapshots = self.ProjectsInstancesClustersSnapshotsService(self)
     self.projects_instances_clusters = self.ProjectsInstancesClustersService(self)
     self.projects_instances_tables = self.ProjectsInstancesTablesService(self)
     self.projects_instances = self.ProjectsInstancesService(self)
@@ -58,7 +57,10 @@ guaranteed.  If the server doesn't support this method, it returns
 `google.rpc.Code.UNIMPLEMENTED`.  Clients can use
 Operations.GetOperation or
 other methods to check whether the cancellation succeeded or whether the
-operation completed despite cancellation.
+operation completed despite cancellation. On successful cancellation,
+the operation is not deleted; instead, it becomes an operation with
+an Operation.error value with a google.rpc.Status.code of 1,
+corresponding to `Code.CANCELLED`.
 
       Args:
         request: (BigtableadminOperationsCancelRequest) input message
@@ -71,12 +73,13 @@ operation completed despite cancellation.
           config, request, global_params=global_params)
 
     Cancel.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/operations/{operationsId}:cancel',
         http_method=u'POST',
         method_id=u'bigtableadmin.operations.cancel',
-        ordered_params=[u'operationsId'],
-        path_params=[u'operationsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v2/operations/{operationsId}:cancel',
+        relative_path=u'v2/{+name}:cancel',
         request_field='',
         request_type_name=u'BigtableadminOperationsCancelRequest',
         response_type_name=u'Empty',
@@ -100,12 +103,13 @@ operation. If the server doesn't support this method, it returns
           config, request, global_params=global_params)
 
     Delete.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/operations/{operationsId}',
         http_method=u'DELETE',
         method_id=u'bigtableadmin.operations.delete',
-        ordered_params=[u'operationsId'],
-        path_params=[u'operationsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v2/operations/{operationsId}',
+        relative_path=u'v2/{+name}',
         request_field='',
         request_type_name=u'BigtableadminOperationsDeleteRequest',
         response_type_name=u'Empty',
@@ -128,12 +132,13 @@ service.
           config, request, global_params=global_params)
 
     Get.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/operations/{operationsId}',
         http_method=u'GET',
         method_id=u'bigtableadmin.operations.get',
-        ordered_params=[u'operationsId'],
-        path_params=[u'operationsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v2/operations/{operationsId}',
+        relative_path=u'v2/{+name}',
         request_field='',
         request_type_name=u'BigtableadminOperationsGetRequest',
         response_type_name=u'Operation',
@@ -158,103 +163,16 @@ to use different resource name schemes, such as `users/*/operations`.
           config, request, global_params=global_params)
 
     List.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/operations',
         http_method=u'GET',
         method_id=u'bigtableadmin.operations.list',
-        ordered_params=[],
-        path_params=[],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[u'filter', u'pageSize', u'pageToken'],
-        relative_path=u'v2/operations',
+        relative_path=u'v2/{+name}',
         request_field='',
         request_type_name=u'BigtableadminOperationsListRequest',
         response_type_name=u'ListOperationsResponse',
-        supports_download=False,
-    )
-
-  class ProjectsInstancesClustersSnapshotsService(base_api.BaseApiService):
-    """Service class for the projects_instances_clusters_snapshots resource."""
-
-    _NAME = u'projects_instances_clusters_snapshots'
-
-    def __init__(self, client):
-      super(BigtableadminV2.ProjectsInstancesClustersSnapshotsService, self).__init__(client)
-      self._upload_configs = {
-          }
-
-    def Delete(self, request, global_params=None):
-      """Permanently deletes the specified snapshot.
-
-      Args:
-        request: (BigtableadminProjectsInstancesClustersSnapshotsDeleteRequest) input message
-        global_params: (StandardQueryParameters, default: None) global arguments
-      Returns:
-        (Empty) The response message.
-      """
-      config = self.GetMethodConfig('Delete')
-      return self._RunMethod(
-          config, request, global_params=global_params)
-
-    Delete.method_config = lambda: base_api.ApiMethodInfo(
-        http_method=u'DELETE',
-        method_id=u'bigtableadmin.projects.instances.clusters.snapshots.delete',
-        ordered_params=[u'projectsId', u'instancesId', u'clustersId', u'snapshotsId'],
-        path_params=[u'clustersId', u'instancesId', u'projectsId', u'snapshotsId'],
-        query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters/{clustersId}/snapshots/{snapshotsId}',
-        request_field='',
-        request_type_name=u'BigtableadminProjectsInstancesClustersSnapshotsDeleteRequest',
-        response_type_name=u'Empty',
-        supports_download=False,
-    )
-
-    def Get(self, request, global_params=None):
-      """Gets metadata information about the specified snapshot.
-
-      Args:
-        request: (BigtableadminProjectsInstancesClustersSnapshotsGetRequest) input message
-        global_params: (StandardQueryParameters, default: None) global arguments
-      Returns:
-        (Snapshot) The response message.
-      """
-      config = self.GetMethodConfig('Get')
-      return self._RunMethod(
-          config, request, global_params=global_params)
-
-    Get.method_config = lambda: base_api.ApiMethodInfo(
-        http_method=u'GET',
-        method_id=u'bigtableadmin.projects.instances.clusters.snapshots.get',
-        ordered_params=[u'projectsId', u'instancesId', u'clustersId', u'snapshotsId'],
-        path_params=[u'clustersId', u'instancesId', u'projectsId', u'snapshotsId'],
-        query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters/{clustersId}/snapshots/{snapshotsId}',
-        request_field='',
-        request_type_name=u'BigtableadminProjectsInstancesClustersSnapshotsGetRequest',
-        response_type_name=u'Snapshot',
-        supports_download=False,
-    )
-
-    def List(self, request, global_params=None):
-      """Lists all snapshots associated with the specified cluster.
-
-      Args:
-        request: (BigtableadminProjectsInstancesClustersSnapshotsListRequest) input message
-        global_params: (StandardQueryParameters, default: None) global arguments
-      Returns:
-        (ListSnapshotsResponse) The response message.
-      """
-      config = self.GetMethodConfig('List')
-      return self._RunMethod(
-          config, request, global_params=global_params)
-
-    List.method_config = lambda: base_api.ApiMethodInfo(
-        http_method=u'GET',
-        method_id=u'bigtableadmin.projects.instances.clusters.snapshots.list',
-        ordered_params=[u'projectsId', u'instancesId', u'clustersId'],
-        path_params=[u'clustersId', u'instancesId', u'projectsId'],
-        query_params=[u'pageSize', u'pageToken'],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters/{clustersId}/snapshots',
-        request_field='',
-        request_type_name=u'BigtableadminProjectsInstancesClustersSnapshotsListRequest',
-        response_type_name=u'ListSnapshotsResponse',
         supports_download=False,
     )
 
@@ -282,12 +200,13 @@ to use different resource name schemes, such as `users/*/operations`.
           config, request, global_params=global_params)
 
     Create.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters',
         http_method=u'POST',
         method_id=u'bigtableadmin.projects.instances.clusters.create',
-        ordered_params=[u'projectsId', u'instancesId'],
-        path_params=[u'instancesId', u'projectsId'],
+        ordered_params=[u'parent'],
+        path_params=[u'parent'],
         query_params=[u'clusterId'],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters',
+        relative_path=u'v2/{+parent}/clusters',
         request_field=u'cluster',
         request_type_name=u'BigtableadminProjectsInstancesClustersCreateRequest',
         response_type_name=u'Operation',
@@ -308,12 +227,13 @@ to use different resource name schemes, such as `users/*/operations`.
           config, request, global_params=global_params)
 
     Delete.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters/{clustersId}',
         http_method=u'DELETE',
         method_id=u'bigtableadmin.projects.instances.clusters.delete',
-        ordered_params=[u'projectsId', u'instancesId', u'clustersId'],
-        path_params=[u'clustersId', u'instancesId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters/{clustersId}',
+        relative_path=u'v2/{+name}',
         request_field='',
         request_type_name=u'BigtableadminProjectsInstancesClustersDeleteRequest',
         response_type_name=u'Empty',
@@ -334,12 +254,13 @@ to use different resource name schemes, such as `users/*/operations`.
           config, request, global_params=global_params)
 
     Get.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters/{clustersId}',
         http_method=u'GET',
         method_id=u'bigtableadmin.projects.instances.clusters.get',
-        ordered_params=[u'projectsId', u'instancesId', u'clustersId'],
-        path_params=[u'clustersId', u'instancesId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters/{clustersId}',
+        relative_path=u'v2/{+name}',
         request_field='',
         request_type_name=u'BigtableadminProjectsInstancesClustersGetRequest',
         response_type_name=u'Cluster',
@@ -360,12 +281,13 @@ to use different resource name schemes, such as `users/*/operations`.
           config, request, global_params=global_params)
 
     List.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters',
         http_method=u'GET',
         method_id=u'bigtableadmin.projects.instances.clusters.list',
-        ordered_params=[u'projectsId', u'instancesId'],
-        path_params=[u'instancesId', u'projectsId'],
+        ordered_params=[u'parent'],
+        path_params=[u'parent'],
         query_params=[u'pageToken'],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters',
+        relative_path=u'v2/{+parent}/clusters',
         request_field='',
         request_type_name=u'BigtableadminProjectsInstancesClustersListRequest',
         response_type_name=u'ListClustersResponse',
@@ -376,7 +298,7 @@ to use different resource name schemes, such as `users/*/operations`.
       """Updates a cluster within an instance.
 
       Args:
-        request: (BigtableadminProjectsInstancesClustersUpdateRequest) input message
+        request: (Cluster) input message
         global_params: (StandardQueryParameters, default: None) global arguments
       Returns:
         (Operation) The response message.
@@ -386,14 +308,15 @@ to use different resource name schemes, such as `users/*/operations`.
           config, request, global_params=global_params)
 
     Update.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters/{clustersId}',
         http_method=u'PUT',
         method_id=u'bigtableadmin.projects.instances.clusters.update',
-        ordered_params=[u'projectsId', u'instancesId', u'clustersId'],
-        path_params=[u'clustersId', u'instancesId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/clusters/{clustersId}',
-        request_field=u'cluster',
-        request_type_name=u'BigtableadminProjectsInstancesClustersUpdateRequest',
+        relative_path=u'v2/{+name}',
+        request_field='<request>',
+        request_type_name=u'Cluster',
         response_type_name=u'Operation',
         supports_download=False,
     )
@@ -424,42 +347,16 @@ specified in the request.
           config, request, global_params=global_params)
 
     Create.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables',
         http_method=u'POST',
         method_id=u'bigtableadmin.projects.instances.tables.create',
-        ordered_params=[u'projectsId', u'instancesId'],
-        path_params=[u'instancesId', u'projectsId'],
+        ordered_params=[u'parent'],
+        path_params=[u'parent'],
         query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables',
+        relative_path=u'v2/{+parent}/tables',
         request_field=u'createTableRequest',
         request_type_name=u'BigtableadminProjectsInstancesTablesCreateRequest',
         response_type_name=u'Table',
-        supports_download=False,
-    )
-
-    def CreateFromSnapshot(self, request, global_params=None):
-      """Creates a new table from the specified snapshot. The target table must.
-not exist. The snapshot and the table must be in the same instance.
-
-      Args:
-        request: (BigtableadminProjectsInstancesTablesCreateFromSnapshotRequest) input message
-        global_params: (StandardQueryParameters, default: None) global arguments
-      Returns:
-        (Operation) The response message.
-      """
-      config = self.GetMethodConfig('CreateFromSnapshot')
-      return self._RunMethod(
-          config, request, global_params=global_params)
-
-    CreateFromSnapshot.method_config = lambda: base_api.ApiMethodInfo(
-        http_method=u'POST',
-        method_id=u'bigtableadmin.projects.instances.tables.createFromSnapshot',
-        ordered_params=[u'projectsId', u'instancesId'],
-        path_params=[u'instancesId', u'projectsId'],
-        query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables:createFromSnapshot',
-        request_field=u'createTableFromSnapshotRequest',
-        request_type_name=u'BigtableadminProjectsInstancesTablesCreateFromSnapshotRequest',
-        response_type_name=u'Operation',
         supports_download=False,
     )
 
@@ -477,12 +374,13 @@ not exist. The snapshot and the table must be in the same instance.
           config, request, global_params=global_params)
 
     Delete.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables/{tablesId}',
         http_method=u'DELETE',
         method_id=u'bigtableadmin.projects.instances.tables.delete',
-        ordered_params=[u'projectsId', u'instancesId', u'tablesId'],
-        path_params=[u'instancesId', u'projectsId', u'tablesId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables/{tablesId}',
+        relative_path=u'v2/{+name}',
         request_field='',
         request_type_name=u'BigtableadminProjectsInstancesTablesDeleteRequest',
         response_type_name=u'Empty',
@@ -505,12 +403,13 @@ particular prefix.
           config, request, global_params=global_params)
 
     DropRowRange.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables/{tablesId}:dropRowRange',
         http_method=u'POST',
         method_id=u'bigtableadmin.projects.instances.tables.dropRowRange',
-        ordered_params=[u'projectsId', u'instancesId', u'tablesId'],
-        path_params=[u'instancesId', u'projectsId', u'tablesId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables/{tablesId}:dropRowRange',
+        relative_path=u'v2/{+name}:dropRowRange',
         request_field=u'dropRowRangeRequest',
         request_type_name=u'BigtableadminProjectsInstancesTablesDropRowRangeRequest',
         response_type_name=u'Empty',
@@ -531,12 +430,13 @@ particular prefix.
           config, request, global_params=global_params)
 
     Get.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables/{tablesId}',
         http_method=u'GET',
         method_id=u'bigtableadmin.projects.instances.tables.get',
-        ordered_params=[u'projectsId', u'instancesId', u'tablesId'],
-        path_params=[u'instancesId', u'projectsId', u'tablesId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[u'view'],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables/{tablesId}',
+        relative_path=u'v2/{+name}',
         request_field='',
         request_type_name=u'BigtableadminProjectsInstancesTablesGetRequest',
         response_type_name=u'Table',
@@ -557,12 +457,13 @@ particular prefix.
           config, request, global_params=global_params)
 
     List.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables',
         http_method=u'GET',
         method_id=u'bigtableadmin.projects.instances.tables.list',
-        ordered_params=[u'projectsId', u'instancesId'],
-        path_params=[u'instancesId', u'projectsId'],
+        ordered_params=[u'parent'],
+        path_params=[u'parent'],
         query_params=[u'pageToken', u'view'],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables',
+        relative_path=u'v2/{+parent}/tables',
         request_field='',
         request_type_name=u'BigtableadminProjectsInstancesTablesListRequest',
         response_type_name=u'ListTablesResponse',
@@ -584,42 +485,16 @@ on the specified table.
           config, request, global_params=global_params)
 
     ModifyColumnFamilies.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables/{tablesId}:modifyColumnFamilies',
         http_method=u'POST',
         method_id=u'bigtableadmin.projects.instances.tables.modifyColumnFamilies',
-        ordered_params=[u'projectsId', u'instancesId', u'tablesId'],
-        path_params=[u'instancesId', u'projectsId', u'tablesId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables/{tablesId}:modifyColumnFamilies',
+        relative_path=u'v2/{+name}:modifyColumnFamilies',
         request_field=u'modifyColumnFamiliesRequest',
         request_type_name=u'BigtableadminProjectsInstancesTablesModifyColumnFamiliesRequest',
         response_type_name=u'Table',
-        supports_download=False,
-    )
-
-    def Snapshot(self, request, global_params=None):
-      """Creates a new snapshot in the specified cluster from the specified.
-source table. The cluster and the table must be in the same instance.
-
-      Args:
-        request: (BigtableadminProjectsInstancesTablesSnapshotRequest) input message
-        global_params: (StandardQueryParameters, default: None) global arguments
-      Returns:
-        (Snapshot) The response message.
-      """
-      config = self.GetMethodConfig('Snapshot')
-      return self._RunMethod(
-          config, request, global_params=global_params)
-
-    Snapshot.method_config = lambda: base_api.ApiMethodInfo(
-        http_method=u'POST',
-        method_id=u'bigtableadmin.projects.instances.tables.snapshot',
-        ordered_params=[u'projectsId', u'instancesId', u'tablesId'],
-        path_params=[u'instancesId', u'projectsId', u'tablesId'],
-        query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}/tables/{tablesId}:snapshot',
-        request_field=u'snapshotTableRequest',
-        request_type_name=u'BigtableadminProjectsInstancesTablesSnapshotRequest',
-        response_type_name=u'Snapshot',
         supports_download=False,
     )
 
@@ -637,7 +512,7 @@ source table. The cluster and the table must be in the same instance.
       """Create an instance within a project.
 
       Args:
-        request: (BigtableadminProjectsInstancesCreateRequest) input message
+        request: (CreateInstanceRequest) input message
         global_params: (StandardQueryParameters, default: None) global arguments
       Returns:
         (Operation) The response message.
@@ -647,14 +522,15 @@ source table. The cluster and the table must be in the same instance.
           config, request, global_params=global_params)
 
     Create.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances',
         http_method=u'POST',
         method_id=u'bigtableadmin.projects.instances.create',
-        ordered_params=[u'projectsId'],
-        path_params=[u'projectsId'],
+        ordered_params=[u'parent'],
+        path_params=[u'parent'],
         query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances',
-        request_field=u'createInstanceRequest',
-        request_type_name=u'BigtableadminProjectsInstancesCreateRequest',
+        relative_path=u'v2/{+parent}/instances',
+        request_field='<request>',
+        request_type_name=u'CreateInstanceRequest',
         response_type_name=u'Operation',
         supports_download=False,
     )
@@ -673,12 +549,13 @@ source table. The cluster and the table must be in the same instance.
           config, request, global_params=global_params)
 
     Delete.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}',
         http_method=u'DELETE',
         method_id=u'bigtableadmin.projects.instances.delete',
-        ordered_params=[u'projectsId', u'instancesId'],
-        path_params=[u'instancesId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}',
+        relative_path=u'v2/{+name}',
         request_field='',
         request_type_name=u'BigtableadminProjectsInstancesDeleteRequest',
         response_type_name=u'Empty',
@@ -699,12 +576,13 @@ source table. The cluster and the table must be in the same instance.
           config, request, global_params=global_params)
 
     Get.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}',
         http_method=u'GET',
         method_id=u'bigtableadmin.projects.instances.get',
-        ordered_params=[u'projectsId', u'instancesId'],
-        path_params=[u'instancesId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}',
+        relative_path=u'v2/{+name}',
         request_field='',
         request_type_name=u'BigtableadminProjectsInstancesGetRequest',
         response_type_name=u'Instance',
@@ -725,12 +603,13 @@ source table. The cluster and the table must be in the same instance.
           config, request, global_params=global_params)
 
     List.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances',
         http_method=u'GET',
         method_id=u'bigtableadmin.projects.instances.list',
-        ordered_params=[u'projectsId'],
-        path_params=[u'projectsId'],
+        ordered_params=[u'parent'],
+        path_params=[u'parent'],
         query_params=[u'pageToken'],
-        relative_path=u'v2/projects/{projectsId}/instances',
+        relative_path=u'v2/{+parent}/instances',
         request_field='',
         request_type_name=u'BigtableadminProjectsInstancesListRequest',
         response_type_name=u'ListInstancesResponse',
@@ -741,7 +620,7 @@ source table. The cluster and the table must be in the same instance.
       """Updates an instance within a project.
 
       Args:
-        request: (BigtableadminProjectsInstancesUpdateRequest) input message
+        request: (Instance) input message
         global_params: (StandardQueryParameters, default: None) global arguments
       Returns:
         (Instance) The response message.
@@ -751,14 +630,15 @@ source table. The cluster and the table must be in the same instance.
           config, request, global_params=global_params)
 
     Update.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v2/projects/{projectsId}/instances/{instancesId}',
         http_method=u'PUT',
         method_id=u'bigtableadmin.projects.instances.update',
-        ordered_params=[u'projectsId', u'instancesId'],
-        path_params=[u'instancesId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v2/projects/{projectsId}/instances/{instancesId}',
-        request_field=u'instance',
-        request_type_name=u'BigtableadminProjectsInstancesUpdateRequest',
+        relative_path=u'v2/{+name}',
+        request_field='<request>',
+        request_type_name=u'Instance',
         response_type_name=u'Instance',
         supports_download=False,
     )

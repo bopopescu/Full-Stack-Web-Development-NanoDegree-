@@ -13,24 +13,23 @@
 # limitations under the License.
 
 """Cancel operation command."""
-
+from googlecloudsdk.api_lib.dataproc import util
 from googlecloudsdk.calliope import base
-from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.core import log
 from googlecloudsdk.core.console import console_io
 
 
 class Cancel(base.Command):
-  """Cancel an active operation."""
+  """Cancel an active operation.
 
-  detailed_help = {
-      'DESCRIPTION': '{description}',
-      'EXAMPLES': """\
-          To cancel an operation, run:
+  Cancel an active operation.
 
-            $ {command} operation_id
-          """,
-  }
+  ## EXAMPLES
+
+  To cancel an operation, run:
+
+    $ {command} operation_id
+  """
 
   @staticmethod
   def Args(parser):
@@ -40,13 +39,16 @@ class Cancel(base.Command):
     client = self.context['dataproc_client']
     messages = self.context['dataproc_messages']
 
-    request = messages.DataprocProjectsRegionsOperationsCancelRequest(
-        name=args.operation)
+    operation_ref = util.ParseOperation(args.operation, self.context)
 
-    if not console_io.PromptContinue(
+    request = messages.DataprocProjectsRegionsOperationsCancelRequest(
+        name=operation_ref.RelativeName())
+
+    console_io.PromptContinue(
         message="The operation '{0}' will be cancelled.".format(
-            args.operation)):
-      raise exceptions.ToolException('Cancellation aborted by user.')
+            args.operation),
+        cancel_on_no=True,
+        cancel_string='Cancellation aborted by user.')
 
     client.projects_regions_operations.Cancel(request)
     # TODO(user) Check that operation was cancelled.

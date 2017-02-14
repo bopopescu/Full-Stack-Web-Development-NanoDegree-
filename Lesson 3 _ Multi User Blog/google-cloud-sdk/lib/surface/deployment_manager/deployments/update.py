@@ -16,14 +16,16 @@
 
 from apitools.base.py import exceptions as apitools_exceptions
 
+from googlecloudsdk.api_lib.deployment_manager import dm_labels
 from googlecloudsdk.api_lib.deployment_manager import dm_v2_util
 from googlecloudsdk.api_lib.deployment_manager import importer
-from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
-from googlecloudsdk.core import apis as core_apis
+from googlecloudsdk.command_lib.deployment_manager import dm_base
+from googlecloudsdk.command_lib.deployment_manager import dm_write
+from googlecloudsdk.command_lib.deployment_manager import flags
+from googlecloudsdk.command_lib.util import labels_util
 from googlecloudsdk.core import log
-from googlecloudsdk.core import properties
 
 # Number of seconds (approximately) to wait for update operation to complete.
 OPERATION_TIMEOUT = 20 * 60  # 20 mins
@@ -74,16 +76,14 @@ class Update(base.UpdateCommand):
       version: The version this tool is running as. base.ReleaseTrack.GA
           is the default.
     """
+    flags.AddDeploymentNameFlag(parser)
+    flags.AddPropertiesFlag(parser)
+    flags.AddAsyncFlag(parser)
     parser.add_argument(
-        '--async',
-        help='Return immediately and print information about the Operation in '
-        'progress rather than waiting for the Operation to complete. '
-        '(default=False)',
-        dest='async',
-        default=False,
-        action='store_true')
-
-    parser.add_argument('deployment_name', help='Deployment name.')
+        '--description',
+        help='The new description of the deployment.',
+        dest='description'
+    )
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
@@ -100,12 +100,8 @@ class Update(base.UpdateCommand):
           'This flag cannot be used with --config.',
           dest='manifest_id')
 
-    parser.add_argument(
-        '--properties',
-        type=arg_parsers.ArgDict(),
-        help='A comma seperated, key=value, map '
-        'to be used when deploying a template file directly.',
-        dest='properties')
+    if version in [base.ReleaseTrack.ALPHA]:
+      labels_util.AddUpdateLabelsFlags(parser)
 
     parser.add_argument(
         '--preview',
@@ -115,20 +111,16 @@ class Update(base.UpdateCommand):
         default=False,
         action='store_true')
 
-    v2_messages = core_apis.GetMessagesModule('deploymentmanager', 'v2')
     parser.add_argument(
         '--create-policy',
         help='Create policy for resources that have changed in the update.',
         default='CREATE_OR_ACQUIRE',
-        choices=(sorted(v2_messages.DeploymentmanagerDeploymentsUpdateRequest
+        choices=(sorted(dm_base.GetMessages()
+                        .DeploymentmanagerDeploymentsUpdateRequest
                         .CreatePolicyValueValuesEnum.to_dict().keys())))
 
-    parser.add_argument(
-        '--delete-policy',
-        help='Delete policy for resources that have changed in the update.',
-        default='DELETE',
-        choices=(sorted(v2_messages.DeploymentmanagerDeploymentsUpdateRequest
-                        .DeletePolicyValueValuesEnum.to_dict().keys())))
+    flags.AddDeletePolicyFlag(
+        parser, dm_base.GetMessages().DeploymentmanagerDeploymentsUpdateRequest)
 
   def Collection(self):
     return 'deploymentmanager.resources_and_outputs'
@@ -160,51 +152,74 @@ class Update(base.UpdateCommand):
     Raises:
       HttpException: An http error response was received while executing api
           request.
-      ToolException: Config file could not be read or parsed, or the deployment
-          creation operation encountered an error.
     """
-    client = self.context['deploymentmanager-client']
-    messages = self.context['deploymentmanager-messages']
-    project = properties.VALUES.core.project.Get(required=True)
-
-    deployment = messages.Deployment(
+    deployment = dm_base.GetMessages().Deployment(
         name=args.deployment_name,
     )
 
     if args.config:
       deployment.target = importer.BuildTargetConfig(
-          messages, args.config, args.properties)
+          dm_base.GetMessages(), args.config, args.properties)
     elif (self.ReleaseTrack() in [base.ReleaseTrack.ALPHA,
                                   base.ReleaseTrack.BETA]
           and args.manifest_id):
       deployment.target = importer.BuildTargetConfigFromManifest(
-          client, messages, project, args.deployment_name, args.manifest_id,
-          args.properties)
+          dm_base.GetClient(), dm_base.GetMessages(), dm_base.GetProject(),
+          args.deployment_name, args.manifest_id, args.properties)
     # Get the fingerprint from the deployment to update.
     try:
-      current_deployment = client.deployments.Get(
-          messages.DeploymentmanagerDeploymentsGetRequest(
-              project=project,
+      current_deployment = dm_base.GetClient().deployments.Get(
+          dm_base.GetMessages().DeploymentmanagerDeploymentsGetRequest(
+              project=dm_base.GetProject(),
               deployment=args.deployment_name
           )
       )
+      # Update the labels of the deployment
+      if self.ReleaseTrack() in [base.ReleaseTrack.ALPHA]:
+        update_labels = labels_util.GetUpdateLabelsDictFromArgs(args)
+        remove_labels = labels_util.GetRemoveLabelsListFromArgs(args)
+        current_labels = current_deployment.labels
+
+        deployment.labels = dm_labels.UpdateLabels(
+            current_labels, dm_base.GetMessages().DeploymentLabelEntry,
+            update_labels, remove_labels)
+
+        # If no config or manifest_id are specified, but try to update labels,
+        # only get current manifest when it is not a preveiw request
+        if not args.config and not args.manifest_id:
+          if args.update_labels or args.remove_labels:
+            if not args.preview:
+              current_manifest = dm_v2_util.ExtractManifestName(
+                  current_deployment)
+              deployment.target = importer.BuildTargetConfigFromManifest(
+                  dm_base.GetClient(), dm_base.GetMessages(),
+                  dm_base.GetProject(), args.deployment_name, current_manifest)
+
       # If no fingerprint is present, default to an empty fingerprint.
       # This empty default can be removed once the fingerprint change is
       # fully implemented and all deployments have fingerprints.
       deployment.fingerprint = current_deployment.fingerprint or ''
+      if args.description is None:
+        deployment.description = current_deployment.description
+      elif not args.description or args.description.isspace():
+        deployment.description = None
+      else:
+        deployment.description = args.description
     except apitools_exceptions.HttpError as error:
       raise exceptions.HttpException(error, dm_v2_util.HTTP_ERROR_FORMAT)
 
     try:
-      operation = client.deployments.Update(
-          messages.DeploymentmanagerDeploymentsUpdateRequest(
+      operation = dm_base.GetClient().deployments.Update(
+          dm_base.GetMessages().DeploymentmanagerDeploymentsUpdateRequest(
               deploymentResource=deployment,
-              project=project,
+              project=dm_base.GetProject(),
               deployment=args.deployment_name,
               preview=args.preview,
-              createPolicy=(messages.DeploymentmanagerDeploymentsUpdateRequest
+              createPolicy=(dm_base.GetMessages()
+                            .DeploymentmanagerDeploymentsUpdateRequest
                             .CreatePolicyValueValuesEnum(args.create_policy)),
-              deletePolicy=(messages.DeploymentmanagerDeploymentsUpdateRequest
+              deletePolicy=(dm_base.GetMessages()
+                            .DeploymentmanagerDeploymentsUpdateRequest
                             .DeletePolicyValueValuesEnum(args.delete_policy)),
           )
       )
@@ -215,20 +230,18 @@ class Update(base.UpdateCommand):
     else:
       op_name = operation.name
       try:
-        dm_v2_util.WaitForOperation(client, messages, op_name, project,
-                                    'update', OPERATION_TIMEOUT)
+        dm_write.WaitForOperation(op_name,
+                                  'update',
+                                  dm_base.GetProject(),
+                                  timeout=OPERATION_TIMEOUT)
         log.status.Print('Update operation ' + op_name
                          + ' completed successfully.')
-      except exceptions.ToolException:
-        # Operation timed out or had errors. Print this warning, then still
-        # show whatever operation can be gotten.
-        log.error('Update operation ' + op_name
-                  + ' has errors or failed to complete within '
-                  + str(OPERATION_TIMEOUT) + ' seconds.')
       except apitools_exceptions.HttpError as error:
         raise exceptions.HttpException(error, dm_v2_util.HTTP_ERROR_FORMAT)
 
-      return dm_v2_util.FetchResourcesAndOutputs(client, messages, project,
+      return dm_v2_util.FetchResourcesAndOutputs(dm_base.GetClient(),
+                                                 dm_base.GetMessages(),
+                                                 dm_base.GetProject(),
                                                  args.deployment_name)
 
 

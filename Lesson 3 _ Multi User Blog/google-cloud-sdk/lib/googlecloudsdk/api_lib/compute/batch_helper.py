@@ -13,10 +13,13 @@
 # limitations under the License.
 """"Helpers for making batch requests."""
 import json
-import logging
 
 from apitools.base.py import batch
 from apitools.base.py import exceptions
+
+# Upper bound on batch size
+# https://cloud.google.com/compute/docs/api/how-tos/batch
+_BATCH_SIZE_LIMIT = 1000
 
 
 def MakeRequests(requests, http, batch_url=None):
@@ -32,14 +35,11 @@ def MakeRequests(requests, http, batch_url=None):
     A tuple where the first element is a list of all objects returned
     from the calls and the second is a list of error messages.
   """
-  logging.debug('Starting batch request...')
   batch_request = batch.BatchApiRequest(batch_url=batch_url)
   for service, method, request in requests:
-    logging.debug('Adding request: %s', (service, method, request))
     batch_request.Add(service, method, request)
 
-  logging.debug('Making batch request...')
-  responses = batch_request.Execute(http)
+  responses = batch_request.Execute(http, max_batch_size=_BATCH_SIZE_LIMIT)
 
   objects = []
   errors = []
@@ -48,8 +48,7 @@ def MakeRequests(requests, http, batch_url=None):
     objects.append(response.response)
 
     if response.is_error:
-      logging.debug('Error response: %s', response.exception)
-
+      # TODO(b/33771874): Use HttpException to decode error payloads.
       error_message = None
       if isinstance(response.exception, exceptions.HttpError):
         try:
@@ -67,5 +66,4 @@ def MakeRequests(requests, http, batch_url=None):
 
       errors.append(error_message)
 
-  logging.debug('Batch request done; responses %s', objects)
   return objects, errors

@@ -18,9 +18,9 @@ import textwrap
 
 from apitools.base.py import exceptions
 
-from googlecloudsdk.api_lib.iam import utils
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.iam import base_classes
+from googlecloudsdk.command_lib.iam import iam_util
 from googlecloudsdk.core import log
 from googlecloudsdk.core.console import console_io
 
@@ -40,19 +40,19 @@ class Delete(base_classes.BaseIamCommand, base.DeleteCommand):
   @staticmethod
   def Args(parser):
     # TODO(user): add tab completion.
-    parser.add_argument('account',
+    parser.add_argument('name',
                         metavar='IAM-ACCOUNT',
                         help='The service account to delete.')
 
   def Run(self, args):
     try:
       console_io.PromptContinue(message='You are about to delete service '
-                                        'account [{0}].'.format(args.account),
+                                        'account [{0}].'.format(args.name),
                                 cancel_on_no=True)
       self.iam_client.projects_serviceAccounts.Delete(
           self.messages.IamProjectsServiceAccountsDeleteRequest(
-              name=utils.EmailToAccountResourceName(args.account)))
+              name=iam_util.EmailToAccountResourceName(args.name)))
 
-      log.status.Print('deleted service account [{0}]'.format(args.account))
+      log.status.Print('deleted service account [{0}]'.format(args.name))
     except exceptions.HttpError as error:
-      raise utils.ConvertToServiceAccountException(error, args.account)
+      raise iam_util.ConvertToServiceAccountException(error, args.name)

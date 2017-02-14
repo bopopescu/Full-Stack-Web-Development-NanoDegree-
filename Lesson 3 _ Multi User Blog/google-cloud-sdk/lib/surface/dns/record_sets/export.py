@@ -21,7 +21,6 @@ from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.core import log
 from googlecloudsdk.core import properties
-from googlecloudsdk.core.util import files
 
 
 class Export(base.Command):
@@ -64,7 +63,10 @@ class Export(base.Command):
     # Get the managed-zone.
     zone_ref = resources.Parse(args.zone, collection='dns.managedZones')
     try:
-      zone = dns.managedZones.Get(zone_ref.Request())
+      zone = dns.managedZones.Get(
+          dns.MESSAGES_MODULE.DnsManagedZonesGetRequest(
+              project=zone_ref.project,
+              managedZone=zone_ref.managedZone))
     except apitools_exceptions.HttpError as error:
       raise exceptions.HttpException(error)
 
@@ -79,7 +81,7 @@ class Export(base.Command):
 
     # Export the record-sets.
     try:
-      with files.Context(open(args.records_file, 'w')) as export_file:
+      with open(args.records_file, 'w') as export_file:
         if args.zone_file_format:
           export_util.WriteToZoneFile(export_file, record_sets, zone.dnsName)
         else:

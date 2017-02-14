@@ -19,7 +19,7 @@ from googlecloudsdk.calliope import base
 
 
 class _BaseGet(object):
-  """Retrieves information about a Cloud SQL instance."""
+  """Displays configuration and metadata about a Cloud SQL instance."""
 
   @staticmethod
   def Args(parser):
@@ -36,7 +36,10 @@ class _BaseGet(object):
         help='Cloud SQL instance ID.')
 
   def Run(self, args):
-    """Retrieves information about a Cloud SQL instance.
+    """Displays configuration and metadata about a Cloud SQL instance.
+
+    Information such as instance name, IP address, region, the CA certificate
+    and configuration settings will be displayed.
 
     Args:
       args: argparse.Namespace, The arguments that this command was invoked
@@ -52,21 +55,37 @@ class _BaseGet(object):
           command.
     """
     sql_client = self.context['sql_client']
+    sql_messages = self.context['sql_messages']
     resources = self.context['registry']
 
     validate.ValidateInstanceName(args.instance)
     instance_ref = resources.Parse(args.instance, collection='sql.instances')
 
-    return sql_client.instances.Get(instance_ref.Request())
+    return sql_client.instances.Get(
+        sql_messages.SqlInstancesGetRequest(
+            project=instance_ref.project,
+            instance=instance_ref.instance))
 
 
 @base.ReleaseTracks(base.ReleaseTrack.GA)
 class Get(_BaseGet, base.DescribeCommand):
-  """Retrieves information about a Cloud SQL instance."""
+  """Displays configuration and metadata about a Cloud SQL instance.
+
+  Displays configuration and metadata about a Cloud SQL instance.
+
+  Information such as instance name, IP address, region, the CA certificate
+  and configuration settings will be displayed.
+  """
   pass
 
 
 @base.ReleaseTracks(base.ReleaseTrack.BETA)
 class GetBeta(_BaseGet, base.DescribeCommand):
-  """Retrieves information about a Cloud SQL instance."""
+  """Displays configuration and metadata about a Cloud SQL instance.
+
+  Displays configuration and metadata about a Cloud SQL instance.
+
+  Information such as instance name, IP address, region, the CA certificate
+  and configuration settings will be displayed.
+  """
   pass

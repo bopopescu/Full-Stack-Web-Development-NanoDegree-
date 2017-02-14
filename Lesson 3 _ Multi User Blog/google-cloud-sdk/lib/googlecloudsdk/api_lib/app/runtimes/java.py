@@ -20,8 +20,8 @@ runtimes_test, which should also mostly go away.
 import textwrap
 
 JAVA_APP_YAML = textwrap.dedent("""\
+    env: flex
     runtime: {runtime}
-    vm: true
     """)
 DOCKERIGNORE = textwrap.dedent("""\
     .dockerignore
@@ -32,6 +32,8 @@ DOCKERIGNORE = textwrap.dedent("""\
     """)
 DOCKERFILE_JAVA8_PREAMBLE = 'FROM gcr.io/google_appengine/openjdk8\n'
 DOCKERFILE_JETTY9_PREAMBLE = 'FROM gcr.io/google_appengine/jetty9\n'
+DOCKERFILE_JAVA_PREAMBLE = 'FROM gcr.io/google_appengine/openjdk\n'
+DOCKERFILE_JETTY_PREAMBLE = 'FROM gcr.io/google_appengine/jetty\n'
 DOCKERFILE_LEGACY_PREAMBLE = 'FROM gcr.io/google_appengine/java-compat\n'
 DOCKERFILE_COMPAT_PREAMBLE = 'FROM gcr.io/google_appengine/jetty9-compat\n'
 DOCKERFILE_JAVA8_JAR_CMD = 'CMD ["java", "-jar", "/app/{0}"]\n'

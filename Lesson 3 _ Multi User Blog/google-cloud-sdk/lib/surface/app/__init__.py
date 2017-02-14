@@ -17,19 +17,28 @@
 import sys
 
 from googlecloudsdk.calliope import base
-from googlecloudsdk.command_lib.app import checks
 from googlecloudsdk.core import exceptions
 from googlecloudsdk.core import log
 from googlecloudsdk.core import properties
+from googlecloudsdk.core import resources
 from googlecloudsdk.core.util import platforms
 
 
 DETAILED_HELP = {
-    'brief': 'Manage your App Engine app.',
+    'brief': 'Manage your App Engine deployments.',
     'DESCRIPTION': """
-        This set of commands allows you to deploy your app, manage your existing
-        deployments, and also run your app locally.  These commands replace
-        their equivalents in the appcfg tool.
+        The gcloud app command group lets you deploy and manage your Google App
+        Engine apps. These commands replace their equivalents in the appcfg
+        tool.
+
+        App Engine is a platform for building scalable web applications
+        and mobile backends. App Engine provides you with built-in services and
+        APIs such as NoSQL datastores, memcache, and a user authentication API,
+        common to most applications.
+
+        More information on App Engine can be found here:
+        https://cloud.google.com/appengine and detailed documentation can be
+        found here: https://cloud.google.com/appengine/docs/
         """,
     'EXAMPLES': """\
         To run your app locally in the development application server, run:
@@ -55,18 +64,8 @@ DETAILED_HELP = {
 class AppengineGA(base.Group):
 
   def Filter(self, unused_context, unused_args):
-    checks.RaiseIfNotPython27()
-
-
-@base.Hidden
-@base.ReleaseTracks(base.ReleaseTrack.PREVIEW)
-class AppenginePreview(base.Group):
-
-  def Filter(self, unused_context, unused_args):
-    log.warn('The `gcloud preview app` command group is deprecated; please use '
-             'the `gcloud app` commands instead.')
-    checks.RaiseIfNotPython27()
-
+    resources.REGISTRY.SetParamDefault(
+        'appengine', None, 'appsId',
+        properties.VALUES.core.project.Get(required=True))
 
 AppengineGA.detailed_help = DETAILED_HELP
-AppenginePreview.detailed_help = DETAILED_HELP

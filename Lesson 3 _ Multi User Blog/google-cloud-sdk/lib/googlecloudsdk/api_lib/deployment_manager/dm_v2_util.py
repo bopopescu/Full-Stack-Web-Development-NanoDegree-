@@ -14,16 +14,11 @@
 
 """Common helper methods for DeploymentManager V2 Deployments."""
 
-import StringIO
-import time
-
 from apitools.base.py import exceptions as apitools_exceptions
 
-from googlecloudsdk.api_lib.deployment_manager.exceptions import DeploymentManagerError
+from googlecloudsdk.api_lib.util import exceptions as api_exceptions
 from googlecloudsdk.calliope import base
-from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.core import log
-from googlecloudsdk.core.console import progress_tracker
 from googlecloudsdk.core.resource import resource_printer
 
 import yaml
@@ -47,77 +42,6 @@ def PrettyPrint(resource, print_format='json'):
       resources=[resource],
       print_format=print_format,
       out=log.out)
-
-
-def GetOperationError(error):
-  """Returns a ready-to-print string representation from the operation error.
-
-  Args:
-    error: operation error object
-
-  Returns:
-    A ready-to-print string representation of the error.
-  """
-  error_message = StringIO.StringIO()
-  resource_printer.Print(error, 'yaml', out=error_message)
-  return error_message.getvalue()
-
-
-def WaitForOperation(client, messages, operation_name, project,
-                     operation_description, timeout=None):
-  """Wait for an operation to complete.
-
-  Polls the operation requested approximately every second, showing a
-  progress indicator. Returns when the operation has completed.
-
-  Args:
-    client: Object to make requests with
-    messages: Object to build requests with
-    operation_name: The name of the operation to wait on, as returned by
-        operations.list.
-    project: The name of the project that this operation belongs to.
-    operation_description: A short description of the operation to wait on,
-        such as 'create' or 'delete'. Will be displayed to the user.
-    timeout: Optional (approximate) timeout in seconds, after which wait
-        will return failure.
-
-  Raises:
-      HttpException: A http error response was received while executing api
-          request. Will be raised if the operation cannot be found.
-      DeploymentManagerError: The operation finished with error(s) or exceeded
-          the timeout without completing.
-  """
-  ticks = 0
-  message = ('Waiting for '
-             + ('{0} '.format(operation_description)
-                if operation_description else '')
-             + operation_name)
-  with progress_tracker.ProgressTracker(message, autotick=False) as ticker:
-    while timeout is None or ticks < timeout:
-      ticks += 1
-
-      try:
-        operation = client.operations.Get(
-            messages.DeploymentmanagerOperationsGetRequest(
-                project=project,
-                operation=operation_name,
-            )
-        )
-      except apitools_exceptions.HttpError as error:
-        raise exceptions.HttpException(error, HTTP_ERROR_FORMAT)
-      ticker.Tick()
-      # Operation status will be one of PENDING, RUNNING, DONE
-      if operation.status == 'DONE':
-        if operation.error:
-          raise DeploymentManagerError(
-              'Error in Operation ' + operation_name +
-              ':\n' + GetOperationError(operation.error))
-        else:  # Operation succeeded
-          return
-      time.sleep(1)  # wait one second and try again
-    # Timeout exceeded
-    raise DeploymentManagerError(
-        'Wait for Operation ' + operation_name + ' exceeded timeout.')
 
 
 def PrintTable(header, resource_list):
@@ -169,7 +93,7 @@ def _GetNextPage(list_method, request, resource_field, page_token=None,
                else [])
     return (results, return_token)
   except apitools_exceptions.HttpError as error:
-    raise exceptions.HttpException(error, HTTP_ERROR_FORMAT)
+    raise api_exceptions.HttpException(error, HTTP_ERROR_FORMAT)
 
 
 def ExtractManifestName(deployment_response):
@@ -245,7 +169,7 @@ def YieldWithHttpExceptions(generator):
     for y in generator:
       yield y
   except apitools_exceptions.HttpError as error:
-    raise exceptions.HttpException(error, HTTP_ERROR_FORMAT)
+    raise api_exceptions.HttpException(error, HTTP_ERROR_FORMAT)
 
 
 def FetchResourcesAndOutputs(client, messages, project, deployment_name):
@@ -283,4 +207,31 @@ def FetchResourcesAndOutputs(client, messages, project, deployment_name):
     # TODO(user): Pagination b/28298504
     return ResourcesAndOutputs(resources, outputs)
   except apitools_exceptions.HttpError as error:
-    raise exceptions.HttpException(error, HTTP_ERROR_FORMAT)
+    raise api_exceptions.HttpException(error, HTTP_ERROR_FORMAT)
+
+
+class StringPropertyParser(object):
+  """No-op string value parser, prints a deprecation warning on first call."""
+
+  def __init__(self):
+    self.warned = False
+
+  def ParseStringsAndWarn(self, value):
+    # print a warning and then return the value as-is
+    if not self.warned:
+      self.warned = True
+      log.warn(
+          "Delimiter '=' is deprecated for properties flag. Use ':' instead.")
+    return value
+
+
+def ParseAsYaml(value):
+  return yaml.load(value)
+
+
+def NewParserDict():
+  return {
+      '=': StringPropertyParser().ParseStringsAndWarn,  # deprecated
+      ':': ParseAsYaml,
+  }
+

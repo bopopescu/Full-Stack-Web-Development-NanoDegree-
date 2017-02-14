@@ -29,17 +29,20 @@ class Collections(enum.Enum):
           '':
               'operations/{operationsId}',
       },
-      [u'name'],
-      'CloudfunctionsOperationsGetRequest',)
-  OPERATIONS_OPERATIONS = (
-      'operations.operations',
-      'operations/{+name}',
-      {
-          '':
-              'operations/operations/{operationsId}',
-      },
-      [u'name'],
-      'CloudfunctionsOperationsOperationsGetRequest',)
+      [u'name']
+  )
+  PROJECTS_BUCKETS = (
+      'projects.buckets',
+      'projects/_/buckets/{bucketId}',
+      {},
+      ['bucketId']
+  )
+  PROJECTS_LOCATIONS = (
+      'projects.locations',
+      'projects/{projectsId}/locations/{locationsId}',
+      {},
+      ['projectsId', 'locationsId']
+  )
   PROJECTS_LOCATIONS_FUNCTIONS = (
       'projects.locations.functions',
       '{+name}',
@@ -48,12 +51,17 @@ class Collections(enum.Enum):
               'projects/{projectsId}/locations/{locationsId}/functions/'
               '{functionsId}',
       },
-      [u'name'],
-      'CloudfunctionsProjectsLocationsFunctionsGetRequest',)
+      [u'name']
+  )
+  PROVIDERS_EVENT_TYPES = (
+      'providers.event_types',
+      'providers/{triggerProvider}/eventTypes/{triggerEvent}',
+      {},
+      ['triggerProvider', 'triggerEvent']
+  )
 
-  def __init__(self, collection_name, path, flat_paths, params, request_type):
+  def __init__(self, collection_name, path, flat_paths, params):
     self.collection_name = collection_name
     self.path = path
     self.flat_paths = flat_paths
     self.params = params
-    self.request_type = request_type

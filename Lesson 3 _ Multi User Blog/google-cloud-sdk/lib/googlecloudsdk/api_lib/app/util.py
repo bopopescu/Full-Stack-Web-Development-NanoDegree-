@@ -270,12 +270,18 @@ def GetUserAgent():
 class Environment(enum.Enum):
   """Enum for different application environments.
 
-  FLEXIBLE corresponds to any App Engine Flexible Environment applications;
   STANDARD corresponds to App Engine Standard applications.
+  FLEX corresponds to any App Engine `env: flex` applications.
+  MANAGED_VMS corresponds to `vm: true` applications.
   """
 
-  FLEXIBLE = 1
-  STANDARD = 2
+  STANDARD = 1
+  MANAGED_VMS = 2
+  FLEX = 3
+
+  @classmethod
+  def IsFlexible(cls, env):
+    return env in [cls.FLEX, cls.MANAGED_VMS]
 
 
 def IsFlex(env):

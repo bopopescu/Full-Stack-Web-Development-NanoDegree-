@@ -29,6 +29,8 @@
 #     default: <true|false in case there more that one api version>
 #     version: <actual private version of this api,
 #               defaults to public api_version>
+#     resources:
+#       resource_collection_name: <parsing_template>
 
 root_dir: googlecloudsdk/third_party/apis
 
@@ -39,31 +41,30 @@ apis:
   appengine:
     v1:
       discovery_doc: appengine_v1.json
-      unelidable_request_methods:
-        - appengine.apps.create
-        - appengine.apps.patch
-        - appengine.apps.emailSenders.create
-        - appengine.apps.services.patch
-        - appengine.apps.services.versions.create
-    v1beta5:
-      discovery_doc: appengine_v1beta5.json
-      unelidable_request_methods:
-        - appengine.apps.create
-        - appengine.apps.patch
-        - appengine.apps.emailSenders.create
-        - appengine.apps.services.patch
-        - appengine.apps.services.versions.create
       default: true
+      resources:
+        projects: "projects/{projectId}"
+  bigquery:
+    v2:
+      discovery_doc: bigquery_v2.json
   bigtableadmin:
     v2:
       discovery_doc: bigtableadmin_v2.json
+      resources:
+        projects: "projects/{projectId}"
   bigtableclusteradmin:
     v1:
       discovery_doc: bigtableclusteradmin_v1.json
       resources:
          operations: "operations/{+operationId}"
+         projects: "projects/{projectId}"
+         projects.zones: "projects/{projectId}/zones/{zoneId}"
          projects.zones.clusters:
            "projects/{projectId}/zones/{zoneId}/clusters/{clusterId}"
+  bio:
+    v1:
+      discovery_doc: bio_v1.json
+      default: true
   cloudbilling:
     v1:
       discovery_doc: cloudbilling_v1.json
@@ -82,15 +83,28 @@ apis:
   clouderrorreporting:
     v1beta1:
       discovery_doc: clouderrorreporting_v1beta1.json
+      resources:
+         projects: "projects/{projectId}"
   cloudfunctions:
     v1beta2:
       discovery_doc: cloudfunctions_v1beta2.json
+      resources:
+        providers.event_types: "providers/{triggerProvider}/eventTypes/{triggerEvent}"
+        # For now, we only accept global buckets, but should give them to the
+        # EventTrigger API in the format that it expects (with the underscore).
+        projects.buckets: "projects/_/buckets/{bucketId}"
+        projects.locations: "projects/{projectsId}/locations/{locationsId}"
+  cloudkms:
+    v1beta1:
+      discovery_doc: cloudkms_v1beta1.json
   cloudresourcemanager:
     v1beta1:
       discovery_doc: cloudresourcemanager_v1beta1.json
     v1:
       discovery_doc: cloudresourcemanager_v1.json
       default: true
+    v2alpha1:
+      discovery_doc: cloudresourcemanager_v2alpha1.json
   cloudresourcesearch:
     v1:
       discovery_doc: cloudresourcesearch_v1.json
@@ -149,14 +163,16 @@ apis:
     v1beta3:
       discovery_doc: logging_v1beta3.json
       default: true
-    v2beta1:
-      discovery_doc: logging_v2beta1.json
+    v2:
+      discovery_doc: logging_v2.json
   manager:
     v1beta2:
       discovery_doc: manager_v1beta2.json
   ml:
     v1beta1:
       discovery_doc: ml_v1beta1.json
+      resources:
+        projects: "projects/{projectsId}"
   pubsub:
     v1:
       discovery_doc: pubsub_v1.json
@@ -175,6 +191,11 @@ apis:
   source:
     v1:
       discovery_doc: source_v1.json
+  sourcerepo:
+    v1:
+      discovery_doc: sourcerepo_v1.json
+      resources:
+        projects: "projects/{projectsId}"
   sqladmin:
     v1beta3:
       discovery_doc: sqladmin_v1beta3.json
@@ -198,4 +219,3 @@ apis:
   toolresults:
     v1beta3:
       discovery_doc: toolresults_v1beta3.json
-

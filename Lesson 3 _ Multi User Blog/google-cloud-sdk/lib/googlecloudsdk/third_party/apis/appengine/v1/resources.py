@@ -29,8 +29,8 @@ class Collections(enum.Enum):
           '':
               'apps/{appsId}',
       },
-      [u'name'],
-      'AppengineAppsGetRequest',)
+      [u'name']
+  )
   APPS_LOCATIONS = (
       'apps.locations',
       '{+name}',
@@ -38,8 +38,8 @@ class Collections(enum.Enum):
           '':
               'apps/{appsId}/locations/{locationsId}',
       },
-      [u'name'],
-      'AppengineAppsLocationsGetRequest',)
+      [u'name']
+  )
   APPS_OPERATIONS = (
       'apps.operations',
       '{+name}',
@@ -47,8 +47,8 @@ class Collections(enum.Enum):
           '':
               'apps/{appsId}/operations/{operationsId}',
       },
-      [u'name'],
-      'AppengineAppsOperationsGetRequest',)
+      [u'name']
+  )
   APPS_SERVICES = (
       'apps.services',
       '{+name}',
@@ -56,8 +56,8 @@ class Collections(enum.Enum):
           '':
               'apps/{appsId}/services/{servicesId}',
       },
-      [u'name'],
-      'AppengineAppsServicesGetRequest',)
+      [u'name']
+  )
   APPS_SERVICES_VERSIONS = (
       'apps.services.versions',
       '{+name}',
@@ -65,8 +65,8 @@ class Collections(enum.Enum):
           '':
               'apps/{appsId}/services/{servicesId}/versions/{versionsId}',
       },
-      [u'name'],
-      'AppengineAppsServicesVersionsGetRequest',)
+      [u'name']
+  )
   APPS_SERVICES_VERSIONS_INSTANCES = (
       'apps.services.versions.instances',
       '{+name}',
@@ -75,21 +75,17 @@ class Collections(enum.Enum):
               'apps/{appsId}/services/{servicesId}/versions/{versionsId}/'
               'instances/{instancesId}',
       },
-      [u'name'],
-      'AppengineAppsServicesVersionsInstancesGetRequest',)
-  EXPERIMENTAL_APPS_OPERATIONS = (
-      'experimental.apps.operations',
-      '{+name}',
-      {
-          '':
-              'apps/{appsId}/operations/{operationsId}',
-      },
-      [u'name'],
-      'AppengineExperimentalAppsOperationsGetRequest',)
+      [u'name']
+  )
+  PROJECTS = (
+      'projects',
+      'projects/{projectId}',
+      {},
+      ['projectId']
+  )
 
-  def __init__(self, collection_name, path, flat_paths, params, request_type):
+  def __init__(self, collection_name, path, flat_paths, params):
     self.collection_name = collection_name
     self.path = path
     self.flat_paths = flat_paths
     self.params = params
-    self.request_type = request_type

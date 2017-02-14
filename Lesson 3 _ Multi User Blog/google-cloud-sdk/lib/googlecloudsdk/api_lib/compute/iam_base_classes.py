@@ -70,8 +70,7 @@ class BaseGetIamPolicy(base_classes.BaseCommand):
         requests=[get_policy_request],
         http=self.http,
         batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None)
+        errors=errors)
 
     # Converting the objects genrator to a list triggers the
     # logic that actually populates the errors list.
@@ -164,9 +163,10 @@ class BaseSetIamPolicy(base_classes.BaseCommand):
     policy_file = parser.add_argument(
         'policy_file',
         metavar='POLICY_FILE',
-        help='Path to a local JSON formatted file contining a valid policy.')
+        help='Path to a local JSON or YAML formatted file containing a valid'
+        ' policy.')
     policy_file.detailed_help = """\
-        Path to a local JSON formatted file containing a valid policy.
+        Path to a local JSON or YAML formatted file containing a valid policy.
         """
     # TODO(user): fill in detailed help.
 
@@ -187,9 +187,7 @@ class BaseSetIamPolicy(base_classes.BaseCommand):
     pass
 
   def Run(self, args):
-
-    policy = iam_util.ParseJsonPolicyFile(
-        args.policy_file, self.messages.Policy)
+    policy = iam_util.ParsePolicyFile(args.policy_file, self.messages.Policy)
 
     ref = self.CreateReference(args)
     request_class = self.service.GetRequestType(self.method)
@@ -204,8 +202,7 @@ class BaseSetIamPolicy(base_classes.BaseCommand):
         requests=[set_policy_request],
         http=self.http,
         batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None)
+        errors=errors)
 
     # Converting the objects genrator to a list triggers the
     # logic that actually populates the errors list.

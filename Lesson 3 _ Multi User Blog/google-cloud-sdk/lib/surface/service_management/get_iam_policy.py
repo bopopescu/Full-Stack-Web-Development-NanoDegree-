@@ -14,13 +14,25 @@
 
 """Command to describe the access policy for a service."""
 
-from googlecloudsdk.api_lib.service_management import base_classes
-from googlecloudsdk.api_lib.service_management import common_flags
+from googlecloudsdk.api_lib.service_management import services_util
 from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.service_management import arg_parsers
+from googlecloudsdk.command_lib.service_management import common_flags
 
 
-class GetIamPolicy(
-    base.DescribeCommand, base_classes.BaseServiceManagementCommand):
+_DETAILED_HELP = {
+    'DESCRIPTION': """\
+        Gets the IAM policy for a produced service, given the service name.
+        """,
+    'EXAMPLES': """\
+        To print the IAM policy for a service named `my-service`, run:
+
+          $ {command} my-service
+        """,
+}
+
+
+class GetIamPolicy(base.DescribeCommand):
   """Describes the IAM policy for a service."""
 
   @staticmethod
@@ -32,7 +44,7 @@ class GetIamPolicy(
           on the command line after this command. Positional arguments are
           allowed.
     """
-    service_flag = common_flags.service_flag(
+    service_flag = common_flags.producer_service_flag(
         suffix='whose IAM policy is to be described')
     service_flag.AddToParser(parser)
 
@@ -50,8 +62,18 @@ class GetIamPolicy(
       HttpException: An http error response was received while executing api
           request.
     """
-    request = (self.services_messages
-               .ServicemanagementServicesGetIamPolicyRequest(
-                   servicesId=args.service))
+    messages = services_util.GetMessagesModule()
+    client = services_util.GetClientInstance()
 
-    return self.services_client.services.GetIamPolicy(request)
+    service = arg_parsers.GetServiceNameFromArg(args.service)
+
+    request = messages.ServicemanagementServicesGetIamPolicyRequest(
+        servicesId=service)
+
+    return client.services.GetIamPolicy(request)
+
+  def Collection(self):
+    return services_util.SERVICES_COLLECTION
+
+
+GetIamPolicy.detailed_help = _DETAILED_HELP

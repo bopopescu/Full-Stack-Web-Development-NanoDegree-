@@ -15,12 +15,13 @@
 
 from googlecloudsdk.api_lib.compute import base_classes
 from googlecloudsdk.api_lib.compute import request_helper
-from googlecloudsdk.api_lib.compute import time_utils
 from googlecloudsdk.api_lib.compute import utils
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.compute import flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
 from googlecloudsdk.command_lib.compute.instance_groups import flags as instance_groups_flags
 from googlecloudsdk.command_lib.compute.instance_groups.managed import wait_info
+from googlecloudsdk.command_lib.util import time_util
 from googlecloudsdk.core import log
 
 
@@ -37,7 +38,7 @@ def _AddArgs(parser, multizonal):
     instance_groups_flags.ZONAL_INSTANCE_GROUP_MANAGER_ARG.AddArgument(parser)
 
 
-@base.ReleaseTracks(base.ReleaseTrack.GA)
+@base.ReleaseTracks(base.ReleaseTrack.GA, base.ReleaseTrack.BETA)
 class WaitUntilStable(base_classes.BaseCommand):
   """Waits until state of managed instance group is stable."""
 
@@ -45,7 +46,7 @@ class WaitUntilStable(base_classes.BaseCommand):
 
   @staticmethod
   def Args(parser):
-    _AddArgs(parser=parser, multizonal=False)
+    _AddArgs(parser=parser, multizonal=True)
 
   @property
   def service(self):
@@ -56,14 +57,15 @@ class WaitUntilStable(base_classes.BaseCommand):
     return 'instanceGroupManagers'
 
   def CreateGroupReference(self, args):
-    return (instance_groups_flags.ZONAL_INSTANCE_GROUP_MANAGER_ARG
-            .ResolveAsResource)(
-                args, self.resources, default_scope=flags.ScopeEnum.ZONE,
+    return (instance_groups_flags.MULTISCOPE_INSTANCE_GROUP_MANAGER_ARG.
+            ResolveAsResource)(
+                args, self.resources,
+                default_scope=compute_scope.ScopeEnum.ZONE,
                 scope_lister=flags.GetDefaultScopeLister(
                     self.compute_client, self.project))
 
   def Run(self, args):
-    start = time_utils.CurrentTimeSec()
+    start = time_util.CurrentTimeSec()
     group_ref = self.CreateGroupReference(args)
 
     while True:
@@ -73,49 +75,12 @@ class WaitUntilStable(base_classes.BaseCommand):
       if wait_info.IsGroupStable(responses[0]):
         break
       log.out.Print(wait_info.CreateWaitText(responses[0]))
-      time_utils.Sleep(WaitUntilStable._TIME_BETWEEN_POLLS_SEC)
+      time_util.Sleep(WaitUntilStable._TIME_BETWEEN_POLLS_SEC)
 
-      if args.timeout and time_utils.CurrentTimeSec() - start > args.timeout:
+      if args.timeout and time_util.CurrentTimeSec() - start > args.timeout:
         raise utils.TimeoutError('Timeout while waiting for group to become '
                                  'stable.')
     log.out.Print('Group is stable')
-
-  def GetRequestForGroup(self, group_ref):
-    service = self.compute.instanceGroupManagers
-    request = service.GetRequestType('Get')(
-        instanceGroupManager=group_ref.Name(),
-        zone=group_ref.zone,
-        project=self.project)
-    return (service, request)
-
-  def _GetResources(self, group_ref):
-    """Retrieves group with pending actions."""
-    service, request = self.GetRequestForGroup(group_ref)
-    errors = []
-    results = list(request_helper.MakeRequests(
-        requests=[(service, 'Get', request)],
-        http=self.http,
-        batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None))
-
-    return results, errors
-
-
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
-class WaitUntilStableBeta(WaitUntilStable):
-  """Waits until state of managed instance group is stable."""
-
-  @staticmethod
-  def Args(parser):
-    _AddArgs(parser=parser, multizonal=True)
-
-  def CreateGroupReference(self, args):
-    return (instance_groups_flags.MULTISCOPE_INSTANCE_GROUP_MANAGER_ARG.
-            ResolveAsResource)(
-                args, self.resources, default_scope=flags.ScopeEnum.ZONE,
-                scope_lister=flags.GetDefaultScopeLister(
-                    self.compute_client, self.project))
 
   def GetRequestForGroup(self, group_ref):
     if group_ref.Collection() == 'compute.regionInstanceGroupManagers':
@@ -132,13 +97,25 @@ class WaitUntilStableBeta(WaitUntilStable):
           project=self.project)
     return (service, request)
 
+  def _GetResources(self, group_ref):
+    """Retrieves group with pending actions."""
+    service, request = self.GetRequestForGroup(group_ref)
+    errors = []
+    results = list(request_helper.MakeRequests(
+        requests=[(service, 'Get', request)],
+        http=self.http,
+        batch_url=self.batch_url,
+        errors=errors))
+
+    return results, errors
+
 
 @base.ReleaseTracks(base.ReleaseTrack.ALPHA)
-class WaitUntilStableAlpha(WaitUntilStableBeta):
+class WaitUntilStableAlpha(WaitUntilStable):
   """Waits until state of managed instance group is stable."""
 
   def Run(self, args):
-    start = time_utils.CurrentTimeSec()
+    start = time_util.CurrentTimeSec()
     group_ref = self.CreateGroupReference(args)
 
     while True:
@@ -148,9 +125,9 @@ class WaitUntilStableAlpha(WaitUntilStableBeta):
       if wait_info.IsGroupStableAlpha(responses[0]):
         break
       log.out.Print(wait_info.CreateWaitTextAlpha(responses[0]))
-      time_utils.Sleep(WaitUntilStableAlpha._TIME_BETWEEN_POLLS_SEC)
+      time_util.Sleep(WaitUntilStableAlpha._TIME_BETWEEN_POLLS_SEC)
 
-      if args.timeout and time_utils.CurrentTimeSec() - start > args.timeout:
+      if args.timeout and time_util.CurrentTimeSec() - start > args.timeout:
         raise utils.TimeoutError('Timeout while waiting for group to become '
                                  'stable.')
     log.out.Print('Group is stable')

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Utilities for running training jobs locally."""
-
+import atexit
 import json
 import os
 import subprocess
@@ -30,11 +30,13 @@ def MakeProcess(module_name,
                 **extra_popen_args):
   """Make a Popen object that runs the module, with the correct env.
 
+  If task_type is 'master' instead replaces the current process with the
+  subprocess via execution_utils.Exec
   Args:
     module_name: str. Name of the module to run, e.g. trainer.task
     package_root: str. Absolute path to the package root for the module.
       used as CWD for the subprocess.
-    args: [str]. Additional user args.
+    args: [str]. Additional user args. Any relative paths will not work.
     cluster: dict. Cluster configuration dictionary. Suitable for passing to
       tf.train.ClusterSpec.
     task_type: str. Task type of this process. Only relevant if cluster is
@@ -42,7 +44,9 @@ def MakeProcess(module_name,
     index: int. Task index of this process.
     **extra_popen_args: extra args passed to Popen. Used for testing.
   Returns:
-    a subprocess.Popen object corresponding to the subprocesses.
+    a subprocess.Popen object corresponding to the subprocesses or an int
+    corresponding to the return value of the subprocess
+    (if task_type is 'master')
   """
   if args is None:
     args = []
@@ -51,7 +55,8 @@ def MakeProcess(module_name,
   config = {
       'job': {'job_name': module_name, 'args': args},
       'task': {'type': task_type, 'index': index} if cluster else {},
-      'cluster': cluster or {}
+      'cluster': cluster or {},
+      'environment': 'cloud'
   }
   log.info(('launching training process:\n'
             'command: {cmd}\n config: {config}').format(
@@ -63,7 +68,18 @@ def MakeProcess(module_name,
   # configuration options to the training module. the module specific
   # arguments are passed as comand line arguments.
   env['TF_CONFIG'] = json.dumps(config)
-  return subprocess.Popen(cmd, env=env, cwd=package_root, **extra_popen_args)
+  if task_type == 'master':
+    return execution_utils.Exec(
+        cmd, env=env, no_exit=True, cwd=package_root, **extra_popen_args)
+  else:
+    task = subprocess.Popen(
+        cmd,
+        env=env,
+        cwd=package_root,
+        **extra_popen_args
+    )
+    atexit.register(execution_utils.KillSubprocess, task)
+    return task
 
 
 def RunDistributed(module_name,
@@ -81,7 +97,10 @@ def RunDistributed(module_name,
     num_workers: int. Number of workers.
     start_port: int. First port for the contiguous block of ports used
       by the cluster.
-    user_args: [str]. Additional user args for the task.
+    user_args: [str]. Additional user args for the task. Any relative paths will
+      not work.
+  Returns:
+    int. the retval of 'master' subprocess
   """
   ports = range(start_port, start_port + num_ps + num_workers + 1)
   cluster = {
@@ -91,20 +110,18 @@ def RunDistributed(module_name,
       'worker': ['localhost:{port}'.format(port=p)
                  for p in ports[num_ps + 1:]]
   }
-  tasks = {'master': [], 'ps': [], 'worker': []}
-  try:
-    for task_type, addresses in cluster.items():
+  for task_type, addresses in cluster.items():
+    if task_type != 'master':
       for i in range(len(addresses)):
-        tasks[task_type].append(MakeProcess(
-            module_name,
-            package_root,
-            args=user_args,
-            task_type=task_type,
-            index=i,
-            cluster=cluster))
-    tasks['master'][0].wait()
-  finally:
-    for process_list in tasks.values():
-      for process in process_list:
-        if process.poll() is None:  # process is still running
-          process.terminate()
+        MakeProcess(module_name,
+                    package_root,
+                    args=user_args,
+                    task_type=task_type,
+                    index=i,
+                    cluster=cluster)
+  return MakeProcess(module_name,
+                     package_root,
+                     args=user_args,
+                     task_type='master',
+                     index=0,
+                     cluster=cluster)

@@ -137,22 +137,23 @@ class CloudBuildClient(object):
     Returns:
       Build resource
     """
-    return self.client.projects_builds.Get(build_ref.Request())
+    return self.client.projects_builds.Get(
+        self.messages.CloudbuildProjectsBuildsGetRequest(
+            projectId=build_ref.projectId,
+            id=build_ref.id))
 
-  def Stream(self, build_ref):
+  def _MakeLogTailer(self, build):
     """Stream the logs for a build.
 
     Args:
-      build_ref: Build reference, The build whose logs shall be streamed.
+      build: Build resource, The build whose logs shall be streamed.
 
     Raises:
       NoLogsBucketException: If the build does not specify a logsBucket.
 
     Returns:
-      Build message, The completed or terminated build as read for the final
-      poll.
+      LogTailer, the tailer of this build's logs.
     """
-    build = self.GetBuild(build_ref)
 
     if not build.logsBucket:
       raise NoLogsBucketException()
@@ -170,16 +171,31 @@ class CloudBuildClient(object):
         id=build.id,
     )
 
-    log_tailer = LogTailer(
+    return LogTailer(
         bucket=log_bucket,
         obj=log_object,
         out=log.out,
         url_pattern='https://storage.googleapis.com/{bucket}/{obj}')
 
+  def Stream(self, build_ref):
+    """Stream the logs for a build.
+
+    Args:
+      build_ref: Build reference, The build whose logs shall be streamed.
+
+    Raises:
+      NoLogsBucketException: If the build does not specify a logsBucket.
+
+    Returns:
+      Build message, The completed or terminated build as read for the final
+      poll.
+    """
+    build = self.GetBuild(build_ref)
+    log_tailer = self._MakeLogTailer(build)
+
     statuses = self.messages.Build.StatusValueValuesEnum
     working_statuses = [
         statuses.QUEUED,
-        statuses.QUEUING,
         statuses.WORKING,
     ]
 
@@ -195,3 +211,17 @@ class CloudBuildClient(object):
     log_tailer.Poll(is_last=True)
 
     return build
+
+  def PrintLog(self, build_ref):
+    """Print the logs for a build.
+
+    Args:
+      build_ref: Build reference, The build whose logs shall be streamed.
+
+    Raises:
+      NoLogsBucketException: If the build does not specify a logsBucket.
+    """
+    build = self.GetBuild(build_ref)
+    log_tailer = self._MakeLogTailer(build)
+
+    log_tailer.Poll(is_last=True)

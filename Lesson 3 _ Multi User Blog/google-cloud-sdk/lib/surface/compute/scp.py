@@ -13,14 +13,19 @@
 # limitations under the License.
 
 """Implements the command for copying files from and to virtual machines."""
-from googlecloudsdk.api_lib.compute import ssh_utils
+
+import collections
+
 from googlecloudsdk.calliope import actions
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.command_lib.compute import flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
+from googlecloudsdk.command_lib.compute import ssh_utils
+from googlecloudsdk.command_lib.compute.instances import flags as instance_flags
+from googlecloudsdk.command_lib.util import ssh
 from googlecloudsdk.core import log
 from googlecloudsdk.core import properties
-from googlecloudsdk.third_party.py27 import py27_collections as collections
 
 
 RemoteFile = collections.namedtuple(
@@ -83,13 +88,13 @@ class Scp(ssh_utils.BaseSSHCLICommand):
 
     # Parses the positional arguments.
     for arg in args.sources + [args.destination]:
-      if ssh_utils.IsScpLocalPath(arg):
+      if ssh.IsScpLocalPath(arg):
         file_specs.append(LocalFile(arg))
       else:
         user_host, file_path = arg.split(':', 1)
         user_host_parts = user_host.split('@', 1)
         if len(user_host_parts) == 1:
-          user = ssh_utils.GetDefaultSshUsername(warn_on_account_user=True)
+          user = ssh.GetDefaultSshUsername(warn_on_account_user=True)
           instance = user_host_parts[0]
         else:
           user, instance = user_host_parts
@@ -126,15 +131,20 @@ class Scp(ssh_utils.BaseSSHCLICommand):
           'your invocation refers to [{0}] instances: [{1}].'.format(
               len(instances), ', '.join(sorted(instances))))
 
-    instance_ref = self.CreateZonalReference(instances.pop(), args.zone)
+    instance_ref = instance_flags.SSH_INSTANCE_RESOLVER.ResolveResources(
+        [instance], compute_scope.ScopeEnum.ZONE, args.zone, self.resources,
+        scope_lister=flags.GetDefaultScopeLister(
+            self.compute_client, self.project))[0]
     instance = self.GetInstance(instance_ref)
     external_ip_address = ssh_utils.GetExternalIPAddress(instance)
 
     # Builds the scp command.
-    scp_args = [self.scp_executable]
+    scp_args = [self.env.scp]
     if not args.plain:
-      scp_args.extend(self.GetDefaultFlags())
-      scp_args.extend(self.GetHostKeyArgs(args, instance))
+      scp_args.extend(ssh.GetDefaultFlags(self.keys.key_file))
+      host_key_alias = self.HostKeyAlias(instance)
+      scp_args.extend(ssh.GetHostKeyArgs(host_key_alias, args.plain,
+                                         args.strict_host_key_checking))
 
     # apply args
     if args.quiet:
@@ -154,10 +164,10 @@ class Scp(ssh_utils.BaseSSHCLICommand):
 
       else:
         scp_args.append('{0}:{1}'.format(
-            ssh_utils.UserHost(file_spec.user, external_ip_address),
+            ssh.UserHost(file_spec.user, external_ip_address),
             file_spec.file_path))
 
-    self.ActuallyRun(args, scp_args, user, instance)
+    self.ActuallyRun(args, scp_args, user, instance, instance_ref.project)
 
 Scp.detailed_help = {
     'brief': 'Copy files to and from Google Compute Engine virtual machines '

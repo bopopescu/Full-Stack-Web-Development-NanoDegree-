@@ -19,13 +19,17 @@ import StringIO
 
 from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
-from googlecloudsdk.calliope import exceptions as calliope_exceptions
 from googlecloudsdk.calliope import usage_text
+from googlecloudsdk.core import exceptions
 from googlecloudsdk.core import log
 
 
 class UnknownCheckException(Exception):
   """An exception when unknown lint check is requested."""
+
+
+class LintException(exceptions.Error):
+  """One or more lint errors found."""
 
 
 class LintError(object):
@@ -130,7 +134,7 @@ class BadListsChecker(Checker):
 
   def _ForEvery(self, cmd_or_group):
     for flag in cmd_or_group.GetSpecificFlags():
-      if flag.nargs not in [None, 0, 1, '?']:
+      if flag.nargs not in [None, 0, 1]:
         self._issues.append(LintError(
             name=BadListsChecker.name,
             command=cmd_or_group,
@@ -302,4 +306,4 @@ Available Checks:
     for issue in result:
       writer.Print(issue.msg)
     if result:
-      raise calliope_exceptions.ToolException('there were some lint errors.')
+      raise LintException('there were some lint errors.')

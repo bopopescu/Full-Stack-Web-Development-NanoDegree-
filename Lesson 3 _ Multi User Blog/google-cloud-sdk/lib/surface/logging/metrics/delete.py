@@ -14,10 +14,10 @@
 
 """'logging metrics delete' command."""
 
+from googlecloudsdk.api_lib.logging import util
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.core import log
-from googlecloudsdk.core import properties
 from googlecloudsdk.core.console import console_io
 
 
@@ -37,17 +37,14 @@ class Delete(base.DeleteCommand):
       args: an argparse namespace. All the arguments that were provided to this
         command invocation.
     """
-    client = self.context['logging_client_v1beta3']
-    messages = self.context['logging_messages_v1beta3']
-    project = properties.VALUES.core.project.Get(required=True)
-
     if not console_io.PromptContinue(
         'Really delete metric [%s]?' % args.metric_name):
       raise exceptions.ToolException('action canceled by user')
 
-    client.projects_metrics.Delete(
-        messages.LoggingProjectsMetricsDeleteRequest(
-            metricsId=args.metric_name, projectsId=project))
+    util.GetClient().projects_metrics.Delete(
+        util.GetMessages().LoggingProjectsMetricsDeleteRequest(
+            metricName=util.CreateResourceName(
+                util.GetCurrentProjectParent(), 'metrics', args.metric_name)))
     log.DeletedResource(args.metric_name)
 
 

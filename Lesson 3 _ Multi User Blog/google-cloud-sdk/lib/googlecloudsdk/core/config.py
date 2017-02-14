@@ -36,242 +36,6 @@ CLOUDSDK_CONFIG = 'CLOUDSDK_CONFIG'
 # Environment variable for overriding the Cloud SDK active named config
 CLOUDSDK_ACTIVE_CONFIG_NAME = 'CLOUDSDK_ACTIVE_CONFIG_NAME'
 
-# Common shell script preamble for ${CLOUDSDK_SH_PREAMBLE} templates.
-CLOUDSDK_SH_PREAMBLE = r"""
-# <cloud-sdk-sh-preamble>
-#
-#  CLOUDSDK_ROOT_DIR            (a)  installation root dir
-#  CLOUDSDK_PYTHON              (u)  python interpreter path
-#  CLOUDSDK_PYTHON_ARGS         (u)  python interpreter arguments
-#  CLOUDSDK_PYTHON_SITEPACKAGES (u)  use python site packages
-#
-# (a) always defined by the preamble
-# (u) user definition overrides preamble
-
-# Determines the real cloud sdk root dir given the script path.
-# Would be easier with a portable "readlink -f".
-_cloudsdk_root_dir() {
-  case $1 in
-  /*)   _cloudsdk_path=$1
-        ;;
-  */*)  _cloudsdk_path=$PWD/$1
-        ;;
-  *)    _cloudsdk_path=$(which "$1")
-        case $_cloudsdk_path in
-        /*) ;;
-        *)  _cloudsdk_path=$PWD/$_cloudsdk_path ;;
-        esac
-        ;;
-  esac
-  _cloudsdk_dir=0
-  while :
-  do
-    while _cloudsdk_link=$(readlink "$_cloudsdk_path")
-    do
-      case $_cloudsdk_link in
-      /*) _cloudsdk_path=$_cloudsdk_link ;;
-      *)  _cloudsdk_path=$(dirname "$_cloudsdk_path")/$_cloudsdk_link ;;
-      esac
-    done
-    case $_cloudsdk_dir in
-    1)  break ;;
-    esac
-    _cloudsdk_dir=1
-    _cloudsdk_path=$(dirname "$_cloudsdk_path")
-  done
-  while :
-  do  case $_cloudsdk_path in
-      */.)    _cloudsdk_path=$(dirname "$_cloudsdk_path")
-              ;;
-      */bin)  dirname "$_cloudsdk_path"
-              break
-              ;;
-      *)      echo "$_cloudsdk_path"
-              break
-              ;;
-      esac
-  done
-}
-CLOUDSDK_ROOT_DIR=$(_cloudsdk_root_dir "$0")
-
-# Cloud SDK requires python 2 (2.6 or 2.7)
-case $CLOUDSDK_PYTHON in
-*python2*)
-  ;;
-*python[0-9]*)
-  CLOUDSDK_PYTHON=
-  ;;
-esac
-# if CLOUDSDK_PYTHON is empty
-if [ -z "$CLOUDSDK_PYTHON" ]; then
-  # if python2 exists then plain python may point to a version != 2
-  if which python2 >/dev/null; then
-    CLOUDSDK_PYTHON=python2
-  elif which python2.7 >/dev/null; then
-    # this is what some OS X versions call their built-in Python
-    CLOUDSDK_PYTHON=python2.7
-  else
-    CLOUDSDK_PYTHON=python
-  fi
-fi
-
-# if CLOUDSDK_PYTHON_SITEPACKAGES and VIRTUAL_ENV are empty
-case :$CLOUDSDK_PYTHON_SITEPACKAGES:$VIRTUAL_ENV: in
-:::)  # add -S to CLOUDSDK_PYTHON_ARGS if not already there
-      case " $CLOUDSDK_PYTHON_ARGS " in
-      *" -S "*) ;;
-      "  ")     CLOUDSDK_PYTHON_ARGS="-S"
-                ;;
-      *)        CLOUDSDK_PYTHON_ARGS="$CLOUDSDK_PYTHON_ARGS -S"
-                ;;
-      esac
-      unset CLOUDSDK_PYTHON_SITEPACKAGES
-      ;;
-*)    # remove -S from CLOUDSDK_PYTHON_ARGS if already there
-      while :; do
-        case " $CLOUDSDK_PYTHON_ARGS " in
-        *" -S "*) CLOUDSDK_PYTHON_ARGS=${CLOUDSDK_PYTHON_ARGS%%-S*}' '${CLOUDSDK_PYTHON_ARGS#*-S} ;;
-        *) break ;;
-        esac
-      done
-      # if CLOUDSDK_PYTHON_SITEPACKAGES is empty
-      [ -z "$CLOUDSDK_PYTHON_SITEPACKAGES" ] &&
-        CLOUDSDK_PYTHON_SITEPACKAGES=1
-      export CLOUDSDK_PYTHON_SITEPACKAGES
-      ;;
-esac
-
-export CLOUDSDK_ROOT_DIR CLOUDSDK_PYTHON_ARGS
-
-# </cloud-sdk-sh-preamble>
-"""
-
-# Common cmd.exe script preamble for ${CLOUDSDK_CMD_PREAMBLE} templates.
-CLOUDSDK_CMD_PREAMBLE = r"""
-rem <cloud-sdk-cmd-preamble>
-rem
-rem  CLOUDSDK_ROOT_DIR            (a)  installation root dir
-rem  CLOUDSDK_PYTHON              (u)  python interpreter path
-rem  CLOUDSDK_PYTHON_ARGS         (u)  python interpreter arguments
-rem  CLOUDSDK_PYTHON_SITEPACKAGES (u)  use python site packages
-rem
-rem (a) always defined by the preamble
-rem (u) user definition overrides preamble
-
-rem This command lives in google-cloud-sdk\bin so its parent directory is the
-rem root.
-SET CLOUDSDK_ROOT_DIR=%~dp0..
-SET PATH=%CLOUDSDK_ROOT_DIR%\bin\sdk;%PATH%
-
-IF "%CLOUDSDK_PYTHON%"=="" (
-  SET BUNDLED_PYTHON=!CLOUDSDK_ROOT_DIR!\platform\bundledpython\python.exe
-  IF EXIST !BUNDLED_PYTHON! (
-    SET CLOUDSDK_PYTHON=!BUNDLED_PYTHON!
-  ) ELSE (
-    SET CLOUDSDK_PYTHON=python.exe
-  )
-)
-
-IF "%CLOUDSDK_PYTHON_SITEPACKAGES%" == "" (
-  IF "!VIRTUAL_ENV!" == "" (
-    SET CLOUDSDK_PYTHON_SITEPACKAGES=
-  ) ELSE (
-    SET CLOUDSDK_PYTHON_SITEPACKAGES=1
-  )
-)
-SET CLOUDSDK_PYTHON_ARGS_NO_S=%CLOUDSDK_PYTHON_ARGS:-S=%
-IF "%CLOUDSDK_PYTHON_SITEPACKAGES%" == "" (
-  IF "!CLOUDSDK_PYTHON_ARGS!" == "" (
-    SET CLOUDSDK_PYTHON_ARGS=-S
-  ) ELSE (
-    SET CLOUDSDK_PYTHON_ARGS=!CLOUDSDK_PYTHON_ARGS_NO_S! -S
-  )
-) ELSE IF "%CLOUDSDK_PYTHON_ARGS%" == "" (
-  SET CLOUDSDK_PYTHON_ARGS=
-) ELSE (
-  SET CLOUDSDK_PYTHON_ARGS=!CLOUDSDK_PYTHON_ARGS_NO_S!
-)
-
-rem </cloud-sdk-cmd-preamble>
-"""
-
-
-# Common powershell.exe script preamble for ${CLOUDSDK_PS1_PREAMBLE} templates.
-CLOUDSDK_PS1_PREAMBLE = r"""
-# <cloud-sdk-ps1-preamble>
-#
-#  CLOUDSDK_ROOT_DIR            (a)  installation root dir
-#  CLOUDSDK_PYTHON              (u)  python interpreter path
-#  CLOUDSDK_PYTHON_ARGS         (u)  python interpreter arguments
-#  CLOUDSDK_PYTHON_SITEPACKAGES (u)  use python site packages
-#
-# (a) always defined by the preamble
-# (u) user definition overrides preamble
-
-
-function Restore-Environment([System.Collections.DictionaryEntry[]] $origEnv) {
-  # Remove any added variables.
-  compare-object $origEnv $(get-childitem Env:) -property Key -passthru |
-      where-object { $_.SideIndicator -eq "=>" } |
-          foreach-object { remove-item -path ("Env:" + $_.Name); }
-  # Revert any changed variables to original values.
-  compare-object $origEnv $(get-childitem Env:) -property Value -passthru |
-      where-object { $_.SideIndicator -eq "<=" } |
-          foreach-object { set-item -path ("Env:" + $_.Name) -value $_.Value }
-}
-
-# Save the original environmental variables so we can restore them at the end.
-$origEnv = get-childitem Env:
-
-$current_dir = Split-Path $script:MyInvocation.MyCommand.Path
-$cloudsdk_root_dir = (Resolve-Path (Join-Path $current_dir '..')).Path
-$env:PATH = (Join-Path $cloudsdk_root_dir 'bin\sdk') + ';' + $env:PATH
-
-if (!$cloudsdk_python) {
-  $cloudsdk_python = $env:CLOUDSDK_PYTHON
-}
-if (!$cloudsdk_python) {
-  $bundled_python = Join-Path $cloudsdk_root_dir 'platform\bundledpython\python.exe'
-  if (Test-Path $bundled_python) {
-    $cloudsdk_python = $bundled_python
-  } else {
-    $cloudsdk_python = 'python.exe'
-  }
-}
-
-if (!$cloudsdk_python_sitepackages) {
-  $cloudsdk_python_sitepackages = $env:CLOUDSDK_PYTHON_SITEPACKAGES
-}
-if (!$cloudsdk_python_sitepackages) {
-  if (!(Test-Path env:\VIRTUAL_ENV)) {
-    $cloudsdk_python_sitepackages = ''
-  } else {
-    $cloudsdk_python_sitepackages = 1
-  }
-}
-
-if (!$cloudsdk_python_args) {
-  $cloudsdk_python_args = $env:CLOUDSDK_PYTHON_ARGS
-}
-$cloudsdk_python_args_no_s = ''
-if ($cloudsdk_python_args) {
-  $args_array_no_s = ($cloudsdk_python_args.split(' ') | ? {$_ -cne '-S'})
-  if ($args_array_no_s) {
-    $cloudsdk_python_args_no_s = [string]::join(' ', $args_array_no_s)
-  }
-}
-if (!$cloudsdk_python_sitepackages) {
-  $cloudsdk_python_args = $cloudsdk_python_args_no_s + ' -S'
-} else {
-  $cloudsdk_python_args = $cloudsdk_python_args_no_s
-}
-
-$env:CLOUDSDK_ROOT_DIR = $cloudsdk_root_dir
-$env:CLOUDSDK_PYTHON_ARGS = $cloudsdk_python_args
-
-# </cloud-sdk-ps1-preamble>
-"""
-
 
 class InstallationConfig(object):
   """Loads configuration constants from the core config file.
@@ -410,6 +174,8 @@ CLOUDSDK_SCOPES = (
     'https://www.googleapis.com/auth/appengine.admin',
     'https://www.googleapis.com/auth/compute',  # needed by autoscaler
 )
+
+REAUTH_SCOPE = 'https://www.googleapis.com/auth/accounts.reauth'
 
 
 def EnsureSDKWriteAccess(sdk_root_override=None):
@@ -597,34 +363,44 @@ class Paths(object):
     return os.path.join(self.global_config_dir, 'configurations')
 
   @property
+  def config_sentinel_file(self):
+    """Gets the path to the config sentinel.
+
+    The sentinel is a file that we touch any time there is a change to config.
+    External tools can check this file to see if they need to re-query gcloud's
+    credential/config helper to get updated configuration information. Nothing
+    is ever written to this file, it's timestamp indicates the last time config
+    was changed.
+
+    This does not take into account config changes made through environment
+    variables as they are transient by nature. There is also the edge case of
+    when a user updated installation config. That user's sentinel will be
+    updated but other will not be.
+
+    Returns:
+      str, The path to the sentinel file.
+    """
+    return os.path.join(self.global_config_dir, 'config_sentinel')
+
+  @property
   def container_config_path(self):
     return os.path.join(self.global_config_dir, 'kubernetes')
 
   def LegacyCredentialsDir(self, account):
-    """Gets the path to store legacy multistore credentials in.
+    """Gets the path to store legacy credentials in.
 
     Args:
       account: str, Email account tied to the authorizing credentials.
 
     Returns:
-      str, The path to the multistore credentials file.
+      str, The path to the credentials file.
     """
     if not account:
       account = 'default'
     return os.path.join(self.global_config_dir, 'legacy_credentials', account)
 
-  def LegacyCredentialsMultistorePath(self, account):
-    """Gets the path to store legacy multistore credentials in.
-
-    Args:
-      account: str, Email account tied to the authorizing credentials.
-
-    Returns:
-      str, The path to the multistore credentials file.
-    """
-    return os.path.join(self.LegacyCredentialsDir(account), 'multistore.json')
-
-  def LegacyCredentialsJSONPath(self, account):
+  # This is only used by bq. Do not use for any other purpose.
+  def LegacyCredentialsSingleStorePath(self, account):
     """Gets the path to store legacy JSON credentials in.
 
     Args:
@@ -633,18 +409,8 @@ class Paths(object):
     Returns:
       str, The path to the JSON credentials file.
     """
-    return os.path.join(self.LegacyCredentialsDir(account), 'singlestore.json')
-
-  def LegacyCredentialsGAEJavaPath(self, account):
-    """Gets the path to store legacy GAE for Java credentials in.
-
-    Args:
-      account: str, Email account tied to the authorizing credentials.
-
-    Returns:
-      str, The path to the  GAE for Java credentials file.
-    """
-    return os.path.join(self.LegacyCredentialsDir(account), 'gaejava.txt')
+    return os.path.join(self.LegacyCredentialsDir(account),
+                        'singlestore_bq.json')
 
   def LegacyCredentialsGSUtilPath(self, account):
     """Gets the path to store legacy gsutil credentials in.
@@ -657,7 +423,7 @@ class Paths(object):
     """
     return os.path.join(self.LegacyCredentialsDir(account), '.boto')
 
-  def LegacyCredentialsKeyPath(self, account):
+  def LegacyCredentialsP12KeyPath(self, account):
     """Gets the path to store legacy key file in.
 
     Args:
@@ -668,16 +434,16 @@ class Paths(object):
     """
     return os.path.join(self.LegacyCredentialsDir(account), 'private_key.p12')
 
-  def LegacyCredentialsJSONKeyPath(self, account):
-    """Gets the path to store legacy JSON key file in.
+  def LegacyCredentialsAdcPath(self, account):
+    """Gets the file path to store application default credentials in.
 
     Args:
       account: str, Email account tied to the authorizing credentials.
 
     Returns:
-      str, The path to the key file.
+      str, The path to the file.
     """
-    return os.path.join(self.LegacyCredentialsDir(account), 'private_key.json')
+    return os.path.join(self.LegacyCredentialsDir(account), 'adc.json')
 
   def GCECachePath(self):
     """Get the path to cache whether or not we're on a GCE machine.

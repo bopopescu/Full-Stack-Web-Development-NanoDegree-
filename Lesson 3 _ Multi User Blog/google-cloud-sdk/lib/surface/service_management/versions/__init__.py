@@ -17,5 +17,13 @@
 from googlecloudsdk.calliope import base
 
 
+# NOTE: These are deprecated, so not included in the GA release track
+#       Users should use the functionally identical configs subcommand group.
+@base.ReleaseTracks(base.ReleaseTrack.BETA)
+@base.Hidden
 class Versions(base.Group):
-  """Manage versions for various services."""
+  """Manage versions for various services.
+
+  DEPRECATED: This command group is deprecated and will be removed.
+  Use 'gcloud beta service-management configs' instead.
+  """

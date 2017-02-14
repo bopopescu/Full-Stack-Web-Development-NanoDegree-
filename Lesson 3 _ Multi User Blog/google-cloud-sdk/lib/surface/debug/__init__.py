@@ -14,15 +14,13 @@
 
 """The main command group for the gcloud debug command group."""
 
-from googlecloudsdk.api_lib.debug import debug
 from googlecloudsdk.calliope import base
 from googlecloudsdk.core import properties
 from googlecloudsdk.core import resolvers
 from googlecloudsdk.core import resources
-from googlecloudsdk.core.credentials import store as c_store
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
+@base.ReleaseTracks(base.ReleaseTrack.GA, base.ReleaseTrack.BETA)
 class Debug(base.Group):
   """Commands for interacting with the Cloud Debugger.
 
@@ -74,5 +72,4 @@ class Debug(base.Group):
     resources.REGISTRY.SetParamDefault(
         api='debug', collection=None, param='projectId',
         resolver=resolvers.FromProperty(properties.VALUES.core.project))
-
-    debug.DebugObject.InitializeApiClients()
+    return context

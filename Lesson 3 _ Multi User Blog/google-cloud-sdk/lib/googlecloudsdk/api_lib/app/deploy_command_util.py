@@ -15,6 +15,7 @@
 
 """Utility methods used by the deploy command."""
 
+import json
 import os
 import re
 
@@ -24,9 +25,12 @@ from googlecloudsdk.api_lib.app import appengine_api_client
 from googlecloudsdk.api_lib.app import cloud_build
 from googlecloudsdk.api_lib.app import docker_image
 from googlecloudsdk.api_lib.app import metric_names
+from googlecloudsdk.api_lib.app import runtime_builders
 from googlecloudsdk.api_lib.app import util
 from googlecloudsdk.api_lib.app.images import config
 from googlecloudsdk.api_lib.app.runtimes import fingerprinter
+from googlecloudsdk.api_lib.cloudbuild import build as cloudbuild_build
+from googlecloudsdk.api_lib.storage import storage_util
 from googlecloudsdk.command_lib.app import exceptions as app_exc
 from googlecloudsdk.core import exceptions
 from googlecloudsdk.core import log
@@ -81,13 +85,13 @@ class UnsatisfiedRequirementsError(exceptions.Error):
   """Raised if we are unable to detect the runtime."""
 
 
-def _GetDockerfileCreator(info):
-  """Returns a function to create a dockerfile if the user doesn't have one.
+def _GetDockerfiles(info, dockerfile_dir):
+  """Returns file objects to create dockerfiles if the user doesn't have them.
 
   Args:
     info: (googlecloudsdk.api_lib.app.yaml_parsing.ServiceYamlInfo)
       The service config.
-
+    dockerfile_dir: str, path to the directory with the Dockerfile
   Raises:
     DockerfileError: Raised if a user supplied a Dockerfile and a non-custom
       runtime.
@@ -96,12 +100,8 @@ def _GetDockerfileCreator(info):
     UnsatisfiedRequirementsError: Raised if the code in the directory doesn't
       satisfy the requirements of the specified runtime type.
   Returns:
-    callable(), a function that can be used to create the correct Dockerfile
-    later on.
+    A dictionary of filename to (str) Dockerfile contents.
   """
-  # Use the path to app.yaml (info.file) to determine the location of the
-  # Dockerfile.
-  dockerfile_dir = os.path.dirname(info.file)
   dockerfile = os.path.join(dockerfile_dir, 'Dockerfile')
 
   if info.runtime != 'custom' and os.path.exists(dockerfile):
@@ -116,9 +116,7 @@ def _GetDockerfileCreator(info):
   if info.runtime == 'custom':
     if os.path.exists(dockerfile):
       log.info('Using %s found in %s', config.DOCKERFILE, dockerfile_dir)
-      def NullGenerator():
-        return lambda: None
-      return NullGenerator
+      return {}
     else:
       raise NoDockerfileError(
           'You must provide your own Dockerfile when using a custom runtime.  '
@@ -126,16 +124,41 @@ def _GetDockerfileCreator(info):
           'runtimes.')
 
   # Check the fingerprinting based code.
+  gen_files = {}
   params = ext_runtime.Params(appinfo=info.parsed, deploy=True)
   configurator = fingerprinter.IdentifyDirectory(dockerfile_dir, params)
   if configurator:
-    return configurator.GenerateConfigs
+    dockerfiles = configurator.GenerateConfigData()
+    gen_files.update((d.filename, d.contents) for d in dockerfiles)
+    return gen_files
   # Then throw an error.
   else:
     raise UnsatisfiedRequirementsError(
         'Your application does not satisfy all of the requirements for a '
         'runtime of type [{0}].  Please correct the errors and try '
         'again.'.format(info.runtime))
+
+
+def _GetSourceContextsForUpload(source_dir):
+  """Gets source context file information.
+
+  Args:
+    source_dir: str, path to the service's source directory
+  Returns:
+    A dict of filename to (str) source context file contents.
+  """
+  source_contexts = {}
+  try:
+    contexts = context_util.CalculateExtendedSourceContexts(source_dir)
+    source_contexts[context_util.EXT_CONTEXT_FILENAME] = json.dumps(contexts)
+    context = context_util.BestSourceContext(contexts)
+    source_contexts[context_util.CONTEXT_FILENAME] = json.dumps(context)
+  # This error could either be raised by context_util.BestSourceContext or by
+  # context_util.CalculateExtendedSourceContexts (in which case stop looking)
+  except context_util.GenerateSourceContextError as e:
+    log.warn('Could not generate [{name}]: {error}'.format(
+        name=context_util.CONTEXT_FILENAME, error=e))
+  return source_contexts
 
 
 def _GetDomainAndDisplayId(project_id):
@@ -154,55 +177,64 @@ def _GetImageName(project, service, version):
               display=display, domain=domain, service=service, version=version)
 
 
-def BuildAndPushDockerImage(project, service, version_id, code_bucket_ref):
+def BuildAndPushDockerImage(project, service, source_dir, version_id,
+                            code_bucket_ref, use_runtime_builders=False):
   """Builds and pushes a set of docker images.
 
   Args:
     project: str, The project being deployed to.
     service: ServiceYamlInfo, The parsed service config.
+    source_dir: str, path to the service's source directory
     version_id: The version id to deploy these services under.
     code_bucket_ref: The reference to the GCS bucket where the source will be
       uploaded.
+    use_runtime_builders: bool, whether to use the new CloudBuild-based runtime
+      builders (alternative is old externalized runtimes).
 
   Returns:
     str, The name of the pushed container image.
   """
-  #  Nothing to do if this is not an image based deployment.
+  # Nothing to do if this is not an image-based deployment.
   if not service.RequiresImage():
     return None
-
-  dockerfile_creator = _GetDockerfileCreator(service)
-  context_creator = context_util.GetSourceContextFilesCreator(
-      os.path.dirname(service.file), None)
-
   log.status.Print(
       'Building and pushing image for service [{service}]'
       .format(service=service.module))
 
-  cleanup_dockerfile = dockerfile_creator()
-  cleanup_context = context_creator()
+  gen_files = dict(_GetSourceContextsForUpload(source_dir))
+  if not use_runtime_builders:
+    gen_files.update(_GetDockerfiles(service, source_dir))
+
+  image = docker_image.Image(
+      dockerfile_dir=source_dir,
+      repo=_GetImageName(project, service.module, version_id),
+      nocache=False,
+      tag=config.DOCKER_IMAGE_TAG)
+
+  object_ref = storage_util.ObjectReference(code_bucket_ref, image.tagged_repo)
   try:
-    image = docker_image.Image(
-        dockerfile_dir=os.path.dirname(service.file),
-        repo=_GetImageName(project, service.module, version_id),
-        nocache=False,
-        tag=config.DOCKER_IMAGE_TAG)
-    try:
-      cloud_build.UploadSource(image.dockerfile_dir, code_bucket_ref,
-                               image.tagged_repo)
-    except (OSError, IOError) as err:
-      if platforms.OperatingSystem.IsWindows():
-        if len(err.filename) > _WINDOWS_MAX_PATH:
-          raise WindowMaxPathError(err.filename)
-      raise
-    metrics.CustomTimedEvent(metric_names.CLOUDBUILD_UPLOAD)
-    cloud_build.ExecuteCloudBuild(project, code_bucket_ref, image.tagged_repo,
-                                  image.tagged_repo)
-    metrics.CustomTimedEvent(metric_names.CLOUDBUILD_EXECUTE)
-    return image.tagged_repo
-  finally:
-    cleanup_dockerfile()
-    cleanup_context()
+    cloud_build.UploadSource(image.dockerfile_dir, object_ref,
+                             gen_files=gen_files,
+                             skip_files=service.parsed.skip_files.regex)
+  except (OSError, IOError) as err:
+    if platforms.OperatingSystem.IsWindows():
+      if err.filename and len(err.filename) > _WINDOWS_MAX_PATH:
+        raise WindowMaxPathError(err.filename)
+    raise
+  metrics.CustomTimedEvent(metric_names.CLOUDBUILD_UPLOAD)
+
+  if use_runtime_builders:
+    builder_version = runtime_builders.RuntimeBuilderVersion.FromServiceInfo(
+        service)
+    build = builder_version.LoadCloudBuild({'_OUTPUT_IMAGE': image.tagged_repo})
+  else:
+    build = cloud_build.GetDefaultBuild(image.tagged_repo)
+
+  cloudbuild_build.CloudBuildClient().ExecuteCloudBuild(
+      cloud_build.FixUpBuild(build, object_ref), project=project)
+  metrics.CustomTimedEvent(metric_names.CLOUDBUILD_EXECUTE)
+
+  return image.tagged_repo
 
 
 def DoPrepareManagedVms(gae_client):
@@ -214,11 +246,13 @@ def DoPrepareManagedVms(gae_client):
       # for the project via an undocumented Admin API.
       gae_client.PrepareVmRuntime()
     log.status.Print()
-  except util.RPCError:
-    # Any failures due to an unprepared project will be noisy
+  except util.RPCError as err:
+    # Any failures later due to an unprepared project will be noisy, so it's
+    # okay not to fail here.
     log.warn(
-        "We couldn't validate that your project is ready to deploy to App "
-        'Engine Flexible Environment. If deployment fails, please try again.')
+        ("We couldn't validate that your project is ready to deploy to App "
+         'Engine Flexible Environment. If deployment fails, please check the '
+         'following message and try again:\n') + str(err))
 
 
 def UseSsl(handlers):
@@ -249,7 +283,7 @@ def UseSsl(handlers):
 
 
 def GetAppHostname(app=None, app_id=None, service=None, version=None,
-                   use_ssl=appinfo.SECURE_HTTP):
+                   use_ssl=appinfo.SECURE_HTTP, deploy=True):
   """Returns the hostname of the given version of the deployed app.
 
   Args:
@@ -259,6 +293,7 @@ def GetAppHostname(app=None, app_id=None, service=None, version=None,
     service: str, the (optional) service being deployed
     version: str, the deployed version ID (omit to get the default version URL).
     use_ssl: bool, whether to construct an HTTPS URL.
+    deploy: bool, if this is called during a deployment.
 
   Returns:
     str. Constructed URL.
@@ -269,9 +304,9 @@ def GetAppHostname(app=None, app_id=None, service=None, version=None,
   if not app and not app_id:
     raise TypeError('Must provide an application resource or application ID.')
   version = version or ''
-  service = service or ''
+  service_name = service or ''
   if service == DEFAULT_SERVICE:
-    service = ''
+    service_name = ''
 
   domain = DEFAULT_DOMAIN
   if not app and ':' in app_id:
@@ -279,9 +314,6 @@ def GetAppHostname(app=None, app_id=None, service=None, version=None,
     app = api_client.GetApplication()
   if app:
     app_id, domain = app.defaultHostname.split('.', 1)
-
-  if service == DEFAULT_SERVICE:
-    service = ''
 
   # Normally, AppEngine URLs are of the form
   # 'http[s]://version.service.app.appspot.com'. However, the SSL certificate
@@ -296,7 +328,7 @@ def GetAppHostname(app=None, app_id=None, service=None, version=None,
   # certificate.
   #
   # We've tried to do the best possible thing in every case here.
-  subdomain_parts = filter(bool, [version, service, app_id])
+  subdomain_parts = filter(bool, [version, service_name, app_id])
   scheme = 'http'
   if use_ssl == appinfo.SECURE_HTTP:
     subdomain = '.'.join(subdomain_parts)
@@ -306,14 +338,27 @@ def GetAppHostname(app=None, app_id=None, service=None, version=None,
     if len(subdomain) <= MAX_DNS_LABEL_LENGTH:
       scheme = 'https'
     else:
+      if deploy:
+        format_parts = ['$VERSION_ID', '$SERVICE_ID', '$APP_ID']
+        subdomain_format = ALT_SEPARATOR.join(
+            [j for (i, j) in zip([version, service_name, app_id], format_parts)
+             if i])
+        msg = ('This deployment will result in an invalid SSL certificate for '
+               'service [{0}]. The total length of your subdomain in the '
+               'format {1} should not exceed {2} characters. Please verify '
+               'that the certificate corresponds to the parent domain of your '
+               'application when you connect.').format(service,
+                                                       subdomain_format,
+                                                       MAX_DNS_LABEL_LENGTH)
+        log.warn(msg)
       subdomain = '.'.join(subdomain_parts)
       if use_ssl == appinfo.SECURE_HTTP_OR_HTTPS:
         scheme = 'http'
       elif use_ssl == appinfo.SECURE_HTTPS:
-        msg = ('Most browsers will reject the SSL certificate for service {0}. '
-               'Please verify that the certificate corresponds to the parent '
-               'domain of your application when you connect.').format(service)
-        log.warn(msg)
+        if not deploy:
+          msg = ('Most browsers will reject the SSL certificate for '
+                 'service [{0}].').format(service)
+          log.warn(msg)
         scheme = 'https'
 
   return '{0}://{1}.{2}'.format(scheme, subdomain, domain)
@@ -363,3 +408,4 @@ def CreateAppYamlForAppDirectory(directory):
         'Please prepare an app.yaml file for your application manually '
         'and deploy again.')
   return yaml_path
+

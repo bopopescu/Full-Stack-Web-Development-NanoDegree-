@@ -16,9 +16,10 @@
 
 from googlecloudsdk.api_lib.app import appengine_api_client
 from googlecloudsdk.calliope import base
+from googlecloudsdk.core import resources
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
+@base.ReleaseTracks(base.ReleaseTrack.GA, base.ReleaseTrack.BETA)
 class Describe(base.Command):
   """Display all data about an existing instance."""
 
@@ -37,16 +38,18 @@ class Describe(base.Command):
         'instance',
         help='The instance ID.')
     parser.add_argument(
-        '--service', '-s',
-        required=True,
+        '--service', '-s', required=True,
         help='The service ID.')
     parser.add_argument(
-        '--version', '-v',
-        required=True,
+        '--version', '-v', required=True,
         help='The version ID.')
 
   def Run(self, args):
     api_client = appengine_api_client.GetApiClient()
-    return api_client.GetInstanceResource(service=args.service,
-                                          version=args.version,
-                                          instance=args.instance)
+    params = {'servicesId': args.service,
+              'versionsId': args.version}
+    res = resources.REGISTRY.Parse(args.instance,
+                                   params=params,
+                                   collection='appengine.apps.services.'
+                                              'versions.instances')
+    return api_client.GetInstanceResource(res)

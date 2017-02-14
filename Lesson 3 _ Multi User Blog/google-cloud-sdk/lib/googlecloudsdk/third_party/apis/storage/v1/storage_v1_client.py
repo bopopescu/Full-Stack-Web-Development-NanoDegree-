@@ -41,6 +41,8 @@ class StorageV1(base_api.BaseApiClient):
     self.notifications = self.NotificationsService(self)
     self.objectAccessControls = self.ObjectAccessControlsService(self)
     self.objects = self.ObjectsService(self)
+    self.projects_serviceAccount = self.ProjectsServiceAccountService(self)
+    self.projects = self.ProjectsService(self)
 
   class BucketAccessControlsService(base_api.BaseApiService):
     """Service class for the bucketAccessControls resource."""
@@ -70,7 +72,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.bucketAccessControls.delete',
         ordered_params=[u'bucket', u'entity'],
         path_params=[u'bucket', u'entity'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/acl/{entity}',
         request_field='',
         request_type_name=u'StorageBucketAccessControlsDeleteRequest',
@@ -96,7 +98,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.bucketAccessControls.get',
         ordered_params=[u'bucket', u'entity'],
         path_params=[u'bucket', u'entity'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/acl/{entity}',
         request_field='',
         request_type_name=u'StorageBucketAccessControlsGetRequest',
@@ -108,7 +110,7 @@ class StorageV1(base_api.BaseApiClient):
       """Creates a new ACL entry on the specified bucket.
 
       Args:
-        request: (BucketAccessControl) input message
+        request: (StorageBucketAccessControlsInsertRequest) input message
         global_params: (StandardQueryParameters, default: None) global arguments
       Returns:
         (BucketAccessControl) The response message.
@@ -122,10 +124,10 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.bucketAccessControls.insert',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/acl',
-        request_field='<request>',
-        request_type_name=u'BucketAccessControl',
+        request_field=u'bucketAccessControl',
+        request_type_name=u'StorageBucketAccessControlsInsertRequest',
         response_type_name=u'BucketAccessControl',
         supports_download=False,
     )
@@ -148,7 +150,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.bucketAccessControls.list',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/acl',
         request_field='',
         request_type_name=u'StorageBucketAccessControlsListRequest',
@@ -160,7 +162,7 @@ class StorageV1(base_api.BaseApiClient):
       """Updates an ACL entry on the specified bucket. This method supports patch semantics.
 
       Args:
-        request: (BucketAccessControl) input message
+        request: (StorageBucketAccessControlsPatchRequest) input message
         global_params: (StandardQueryParameters, default: None) global arguments
       Returns:
         (BucketAccessControl) The response message.
@@ -174,10 +176,10 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.bucketAccessControls.patch',
         ordered_params=[u'bucket', u'entity'],
         path_params=[u'bucket', u'entity'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/acl/{entity}',
-        request_field='<request>',
-        request_type_name=u'BucketAccessControl',
+        request_field=u'bucketAccessControl',
+        request_type_name=u'StorageBucketAccessControlsPatchRequest',
         response_type_name=u'BucketAccessControl',
         supports_download=False,
     )
@@ -186,7 +188,7 @@ class StorageV1(base_api.BaseApiClient):
       """Updates an ACL entry on the specified bucket.
 
       Args:
-        request: (BucketAccessControl) input message
+        request: (StorageBucketAccessControlsUpdateRequest) input message
         global_params: (StandardQueryParameters, default: None) global arguments
       Returns:
         (BucketAccessControl) The response message.
@@ -200,10 +202,10 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.bucketAccessControls.update',
         ordered_params=[u'bucket', u'entity'],
         path_params=[u'bucket', u'entity'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/acl/{entity}',
-        request_field='<request>',
-        request_type_name=u'BucketAccessControl',
+        request_field=u'bucketAccessControl',
+        request_type_name=u'StorageBucketAccessControlsUpdateRequest',
         response_type_name=u'BucketAccessControl',
         supports_download=False,
     )
@@ -236,7 +238,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.buckets.delete',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[u'ifMetagenerationMatch', u'ifMetagenerationNotMatch'],
+        query_params=[u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}',
         request_field='',
         request_type_name=u'StorageBucketsDeleteRequest',
@@ -262,7 +264,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.buckets.get',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'projection'],
+        query_params=[u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'projection', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}',
         request_field='',
         request_type_name=u'StorageBucketsGetRequest',
@@ -288,7 +290,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.buckets.getIamPolicy',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/iam',
         request_field='',
         request_type_name=u'StorageBucketsGetIamPolicyRequest',
@@ -349,7 +351,7 @@ class StorageV1(base_api.BaseApiClient):
     )
 
     def Patch(self, request, global_params=None):
-      """Updates a bucket. This method supports patch semantics.
+      """Updates a bucket. Changes to the bucket will be readable immediately after writing, but configuration changes may take time to propagate. This method supports patch semantics.
 
       Args:
         request: (StorageBucketsPatchRequest) input message
@@ -366,7 +368,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.buckets.patch',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'predefinedAcl', u'predefinedDefaultObjectAcl', u'projection'],
+        query_params=[u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'predefinedAcl', u'predefinedDefaultObjectAcl', u'projection', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}',
         request_field=u'bucketResource',
         request_type_name=u'StorageBucketsPatchRequest',
@@ -392,7 +394,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.buckets.setIamPolicy',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/iam',
         request_field=u'policy',
         request_type_name=u'StorageBucketsSetIamPolicyRequest',
@@ -418,7 +420,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.buckets.testIamPermissions',
         ordered_params=[u'bucket', u'permissions'],
         path_params=[u'bucket'],
-        query_params=[u'permissions'],
+        query_params=[u'permissions', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/iam/testPermissions',
         request_field='',
         request_type_name=u'StorageBucketsTestIamPermissionsRequest',
@@ -427,7 +429,7 @@ class StorageV1(base_api.BaseApiClient):
     )
 
     def Update(self, request, global_params=None):
-      """Updates a bucket.
+      """Updates a bucket. Changes to the bucket will be readable immediately after writing, but configuration changes may take time to propagate.
 
       Args:
         request: (StorageBucketsUpdateRequest) input message
@@ -444,7 +446,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.buckets.update',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'predefinedAcl', u'predefinedDefaultObjectAcl', u'projection'],
+        query_params=[u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'predefinedAcl', u'predefinedDefaultObjectAcl', u'projection', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}',
         request_field=u'bucketResource',
         request_type_name=u'StorageBucketsUpdateRequest',
@@ -516,7 +518,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.defaultObjectAccessControls.delete',
         ordered_params=[u'bucket', u'entity'],
         path_params=[u'bucket', u'entity'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/defaultObjectAcl/{entity}',
         request_field='',
         request_type_name=u'StorageDefaultObjectAccessControlsDeleteRequest',
@@ -542,7 +544,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.defaultObjectAccessControls.get',
         ordered_params=[u'bucket', u'entity'],
         path_params=[u'bucket', u'entity'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/defaultObjectAcl/{entity}',
         request_field='',
         request_type_name=u'StorageDefaultObjectAccessControlsGetRequest',
@@ -554,7 +556,7 @@ class StorageV1(base_api.BaseApiClient):
       """Creates a new default object ACL entry on the specified bucket.
 
       Args:
-        request: (ObjectAccessControl) input message
+        request: (StorageDefaultObjectAccessControlsInsertRequest) input message
         global_params: (StandardQueryParameters, default: None) global arguments
       Returns:
         (ObjectAccessControl) The response message.
@@ -568,10 +570,10 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.defaultObjectAccessControls.insert',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/defaultObjectAcl',
-        request_field='<request>',
-        request_type_name=u'ObjectAccessControl',
+        request_field=u'objectAccessControl',
+        request_type_name=u'StorageDefaultObjectAccessControlsInsertRequest',
         response_type_name=u'ObjectAccessControl',
         supports_download=False,
     )
@@ -594,7 +596,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.defaultObjectAccessControls.list',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[u'ifMetagenerationMatch', u'ifMetagenerationNotMatch'],
+        query_params=[u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/defaultObjectAcl',
         request_field='',
         request_type_name=u'StorageDefaultObjectAccessControlsListRequest',
@@ -606,7 +608,7 @@ class StorageV1(base_api.BaseApiClient):
       """Updates a default object ACL entry on the specified bucket. This method supports patch semantics.
 
       Args:
-        request: (ObjectAccessControl) input message
+        request: (StorageDefaultObjectAccessControlsPatchRequest) input message
         global_params: (StandardQueryParameters, default: None) global arguments
       Returns:
         (ObjectAccessControl) The response message.
@@ -620,10 +622,10 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.defaultObjectAccessControls.patch',
         ordered_params=[u'bucket', u'entity'],
         path_params=[u'bucket', u'entity'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/defaultObjectAcl/{entity}',
-        request_field='<request>',
-        request_type_name=u'ObjectAccessControl',
+        request_field=u'objectAccessControl',
+        request_type_name=u'StorageDefaultObjectAccessControlsPatchRequest',
         response_type_name=u'ObjectAccessControl',
         supports_download=False,
     )
@@ -632,7 +634,7 @@ class StorageV1(base_api.BaseApiClient):
       """Updates a default object ACL entry on the specified bucket.
 
       Args:
-        request: (ObjectAccessControl) input message
+        request: (StorageDefaultObjectAccessControlsUpdateRequest) input message
         global_params: (StandardQueryParameters, default: None) global arguments
       Returns:
         (ObjectAccessControl) The response message.
@@ -646,10 +648,10 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.defaultObjectAccessControls.update',
         ordered_params=[u'bucket', u'entity'],
         path_params=[u'bucket', u'entity'],
-        query_params=[],
+        query_params=[u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/defaultObjectAcl/{entity}',
-        request_field='<request>',
-        request_type_name=u'ObjectAccessControl',
+        request_field=u'objectAccessControl',
+        request_type_name=u'StorageDefaultObjectAccessControlsUpdateRequest',
         response_type_name=u'ObjectAccessControl',
         supports_download=False,
     )
@@ -680,10 +682,10 @@ class StorageV1(base_api.BaseApiClient):
     Delete.method_config = lambda: base_api.ApiMethodInfo(
         http_method=u'DELETE',
         method_id=u'storage.notifications.delete',
-        ordered_params=[u'notification'],
-        path_params=[u'notification'],
-        query_params=[],
-        relative_path=u'notifications/{notification}',
+        ordered_params=[u'bucket', u'notification'],
+        path_params=[u'bucket', u'notification'],
+        query_params=[u'requesterPaysBillingProjectId'],
+        relative_path=u'b/{bucket}/notificationConfigs/{notification}',
         request_field='',
         request_type_name=u'StorageNotificationsDeleteRequest',
         response_type_name=u'StorageNotificationsDeleteResponse',
@@ -706,10 +708,10 @@ class StorageV1(base_api.BaseApiClient):
     Get.method_config = lambda: base_api.ApiMethodInfo(
         http_method=u'GET',
         method_id=u'storage.notifications.get',
-        ordered_params=[u'notification'],
-        path_params=[u'notification'],
-        query_params=[],
-        relative_path=u'notifications/{notification}',
+        ordered_params=[u'bucket', u'notification'],
+        path_params=[u'bucket', u'notification'],
+        query_params=[u'requesterPaysBillingProjectId'],
+        relative_path=u'b/{bucket}/notificationConfigs/{notification}',
         request_field='',
         request_type_name=u'StorageNotificationsGetRequest',
         response_type_name=u'Notification',
@@ -720,7 +722,7 @@ class StorageV1(base_api.BaseApiClient):
       """Creates a notification subscription for a given bucket.
 
       Args:
-        request: (Notification) input message
+        request: (StorageNotificationsInsertRequest) input message
         global_params: (StandardQueryParameters, default: None) global arguments
       Returns:
         (Notification) The response message.
@@ -732,12 +734,12 @@ class StorageV1(base_api.BaseApiClient):
     Insert.method_config = lambda: base_api.ApiMethodInfo(
         http_method=u'POST',
         method_id=u'storage.notifications.insert',
-        ordered_params=[],
-        path_params=[],
-        query_params=[],
-        relative_path=u'notifications',
-        request_field='<request>',
-        request_type_name=u'Notification',
+        ordered_params=[u'bucket'],
+        path_params=[u'bucket'],
+        query_params=[u'requesterPaysBillingProjectId'],
+        relative_path=u'b/{bucket}/notificationConfigs',
+        request_field=u'notification',
+        request_type_name=u'StorageNotificationsInsertRequest',
         response_type_name=u'Notification',
         supports_download=False,
     )
@@ -759,9 +761,9 @@ class StorageV1(base_api.BaseApiClient):
         http_method=u'GET',
         method_id=u'storage.notifications.list',
         ordered_params=[u'bucket'],
-        path_params=[],
-        query_params=[u'bucket'],
-        relative_path=u'notifications',
+        path_params=[u'bucket'],
+        query_params=[u'requesterPaysBillingProjectId'],
+        relative_path=u'b/{bucket}/notificationConfigs',
         request_field='',
         request_type_name=u'StorageNotificationsListRequest',
         response_type_name=u'Notifications',
@@ -796,7 +798,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objectAccessControls.delete',
         ordered_params=[u'bucket', u'object', u'entity'],
         path_params=[u'bucket', u'entity', u'object'],
-        query_params=[u'generation'],
+        query_params=[u'generation', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}/acl/{entity}',
         request_field='',
         request_type_name=u'StorageObjectAccessControlsDeleteRequest',
@@ -822,7 +824,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objectAccessControls.get',
         ordered_params=[u'bucket', u'object', u'entity'],
         path_params=[u'bucket', u'entity', u'object'],
-        query_params=[u'generation'],
+        query_params=[u'generation', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}/acl/{entity}',
         request_field='',
         request_type_name=u'StorageObjectAccessControlsGetRequest',
@@ -848,7 +850,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objectAccessControls.insert',
         ordered_params=[u'bucket', u'object'],
         path_params=[u'bucket', u'object'],
-        query_params=[u'generation'],
+        query_params=[u'generation', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}/acl',
         request_field=u'objectAccessControl',
         request_type_name=u'StorageObjectAccessControlsInsertRequest',
@@ -874,7 +876,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objectAccessControls.list',
         ordered_params=[u'bucket', u'object'],
         path_params=[u'bucket', u'object'],
-        query_params=[u'generation'],
+        query_params=[u'generation', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}/acl',
         request_field='',
         request_type_name=u'StorageObjectAccessControlsListRequest',
@@ -900,7 +902,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objectAccessControls.patch',
         ordered_params=[u'bucket', u'object', u'entity'],
         path_params=[u'bucket', u'entity', u'object'],
-        query_params=[u'generation'],
+        query_params=[u'generation', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}/acl/{entity}',
         request_field=u'objectAccessControl',
         request_type_name=u'StorageObjectAccessControlsPatchRequest',
@@ -926,7 +928,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objectAccessControls.update',
         ordered_params=[u'bucket', u'object', u'entity'],
         path_params=[u'bucket', u'entity', u'object'],
-        query_params=[u'generation'],
+        query_params=[u'generation', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}/acl/{entity}',
         request_field=u'objectAccessControl',
         request_type_name=u'StorageObjectAccessControlsUpdateRequest',
@@ -973,7 +975,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.compose',
         ordered_params=[u'destinationBucket', u'destinationObject'],
         path_params=[u'destinationBucket', u'destinationObject'],
-        query_params=[u'destinationPredefinedAcl', u'ifGenerationMatch', u'ifMetagenerationMatch'],
+        query_params=[u'destinationPredefinedAcl', u'ifGenerationMatch', u'ifMetagenerationMatch', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{destinationBucket}/o/{destinationObject}/compose',
         request_field=u'composeRequest',
         request_type_name=u'StorageObjectsComposeRequest',
@@ -1002,7 +1004,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.copy',
         ordered_params=[u'sourceBucket', u'sourceObject', u'destinationBucket', u'destinationObject'],
         path_params=[u'destinationBucket', u'destinationObject', u'sourceBucket', u'sourceObject'],
-        query_params=[u'destinationPredefinedAcl', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'ifSourceGenerationMatch', u'ifSourceGenerationNotMatch', u'ifSourceMetagenerationMatch', u'ifSourceMetagenerationNotMatch', u'projection', u'sourceGeneration'],
+        query_params=[u'destinationPredefinedAcl', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'ifSourceGenerationMatch', u'ifSourceGenerationNotMatch', u'ifSourceMetagenerationMatch', u'ifSourceMetagenerationNotMatch', u'projection', u'requesterPaysBillingProjectId', u'sourceGeneration'],
         relative_path=u'b/{sourceBucket}/o/{sourceObject}/copyTo/b/{destinationBucket}/o/{destinationObject}',
         request_field=u'object',
         request_type_name=u'StorageObjectsCopyRequest',
@@ -1028,7 +1030,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.delete',
         ordered_params=[u'bucket', u'object'],
         path_params=[u'bucket', u'object'],
-        query_params=[u'generation', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch'],
+        query_params=[u'generation', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}',
         request_field='',
         request_type_name=u'StorageObjectsDeleteRequest',
@@ -1057,7 +1059,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.get',
         ordered_params=[u'bucket', u'object'],
         path_params=[u'bucket', u'object'],
-        query_params=[u'generation', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'projection'],
+        query_params=[u'generation', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'projection', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}',
         request_field='',
         request_type_name=u'StorageObjectsGetRequest',
@@ -1083,7 +1085,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.getIamPolicy',
         ordered_params=[u'bucket', u'object'],
         path_params=[u'bucket', u'object'],
-        query_params=[u'generation'],
+        query_params=[u'generation', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}/iam',
         request_field='',
         request_type_name=u'StorageObjectsGetIamPolicyRequest',
@@ -1116,7 +1118,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.insert',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[u'contentEncoding', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'name', u'predefinedAcl', u'projection'],
+        query_params=[u'contentEncoding', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'name', u'predefinedAcl', u'projection', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o',
         request_field=u'object',
         request_type_name=u'StorageObjectsInsertRequest',
@@ -1142,7 +1144,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.list',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[u'delimiter', u'maxResults', u'pageToken', u'prefix', u'projection', u'versions'],
+        query_params=[u'delimiter', u'maxResults', u'pageToken', u'prefix', u'projection', u'requesterPaysBillingProjectId', u'versions'],
         relative_path=u'b/{bucket}/o',
         request_field='',
         request_type_name=u'StorageObjectsListRequest',
@@ -1168,7 +1170,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.patch',
         ordered_params=[u'bucket', u'object'],
         path_params=[u'bucket', u'object'],
-        query_params=[u'generation', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'predefinedAcl', u'projection'],
+        query_params=[u'generation', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'predefinedAcl', u'projection', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}',
         request_field=u'objectResource',
         request_type_name=u'StorageObjectsPatchRequest',
@@ -1194,7 +1196,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.rewrite',
         ordered_params=[u'sourceBucket', u'sourceObject', u'destinationBucket', u'destinationObject'],
         path_params=[u'destinationBucket', u'destinationObject', u'sourceBucket', u'sourceObject'],
-        query_params=[u'destinationPredefinedAcl', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'ifSourceGenerationMatch', u'ifSourceGenerationNotMatch', u'ifSourceMetagenerationMatch', u'ifSourceMetagenerationNotMatch', u'maxBytesRewrittenPerCall', u'projection', u'rewriteToken', u'sourceGeneration'],
+        query_params=[u'destinationPredefinedAcl', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'ifSourceGenerationMatch', u'ifSourceGenerationNotMatch', u'ifSourceMetagenerationMatch', u'ifSourceMetagenerationNotMatch', u'maxBytesRewrittenPerCall', u'projection', u'requesterPaysBillingProjectId', u'rewriteToken', u'sourceGeneration'],
         relative_path=u'b/{sourceBucket}/o/{sourceObject}/rewriteTo/b/{destinationBucket}/o/{destinationObject}',
         request_field=u'object',
         request_type_name=u'StorageObjectsRewriteRequest',
@@ -1220,7 +1222,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.setIamPolicy',
         ordered_params=[u'bucket', u'object'],
         path_params=[u'bucket', u'object'],
-        query_params=[u'generation'],
+        query_params=[u'generation', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}/iam',
         request_field=u'policy',
         request_type_name=u'StorageObjectsSetIamPolicyRequest',
@@ -1246,7 +1248,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.testIamPermissions',
         ordered_params=[u'bucket', u'object', u'permissions'],
         path_params=[u'bucket', u'object'],
-        query_params=[u'generation', u'permissions'],
+        query_params=[u'generation', u'permissions', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}/iam/testPermissions',
         request_field='',
         request_type_name=u'StorageObjectsTestIamPermissionsRequest',
@@ -1275,7 +1277,7 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.update',
         ordered_params=[u'bucket', u'object'],
         path_params=[u'bucket', u'object'],
-        query_params=[u'generation', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'predefinedAcl', u'projection'],
+        query_params=[u'generation', u'ifGenerationMatch', u'ifGenerationNotMatch', u'ifMetagenerationMatch', u'ifMetagenerationNotMatch', u'predefinedAcl', u'projection', u'requesterPaysBillingProjectId'],
         relative_path=u'b/{bucket}/o/{object}',
         request_field=u'objectResource',
         request_type_name=u'StorageObjectsUpdateRequest',
@@ -1301,10 +1303,56 @@ class StorageV1(base_api.BaseApiClient):
         method_id=u'storage.objects.watchAll',
         ordered_params=[u'bucket'],
         path_params=[u'bucket'],
-        query_params=[u'delimiter', u'maxResults', u'pageToken', u'prefix', u'projection', u'versions'],
+        query_params=[u'delimiter', u'maxResults', u'pageToken', u'prefix', u'projection', u'requesterPaysBillingProjectId', u'versions'],
         relative_path=u'b/{bucket}/o/watch',
         request_field=u'channel',
         request_type_name=u'StorageObjectsWatchAllRequest',
         response_type_name=u'Channel',
         supports_download=False,
     )
+
+  class ProjectsServiceAccountService(base_api.BaseApiService):
+    """Service class for the projects_serviceAccount resource."""
+
+    _NAME = u'projects_serviceAccount'
+
+    def __init__(self, client):
+      super(StorageV1.ProjectsServiceAccountService, self).__init__(client)
+      self._upload_configs = {
+          }
+
+    def Get(self, request, global_params=None):
+      """Get the email address of this project's GCS service account.
+
+      Args:
+        request: (StorageProjectsServiceAccountGetRequest) input message
+        global_params: (StandardQueryParameters, default: None) global arguments
+      Returns:
+        (ServiceAccount) The response message.
+      """
+      config = self.GetMethodConfig('Get')
+      return self._RunMethod(
+          config, request, global_params=global_params)
+
+    Get.method_config = lambda: base_api.ApiMethodInfo(
+        http_method=u'GET',
+        method_id=u'storage.projects.serviceAccount.get',
+        ordered_params=[u'projectId'],
+        path_params=[u'projectId'],
+        query_params=[],
+        relative_path=u'projects/{projectId}/serviceAccount',
+        request_field='',
+        request_type_name=u'StorageProjectsServiceAccountGetRequest',
+        response_type_name=u'ServiceAccount',
+        supports_download=False,
+    )
+
+  class ProjectsService(base_api.BaseApiService):
+    """Service class for the projects resource."""
+
+    _NAME = u'projects'
+
+    def __init__(self, client):
+      super(StorageV1.ProjectsService, self).__init__(client)
+      self._upload_configs = {
+          }

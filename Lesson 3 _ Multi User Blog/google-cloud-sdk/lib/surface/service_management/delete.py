@@ -14,15 +14,35 @@
 
 """service-management delete command."""
 
-from googlecloudsdk.api_lib.service_management import base_classes
-from googlecloudsdk.api_lib.service_management import common_flags
 from googlecloudsdk.api_lib.service_management import services_util
 from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.service_management import arg_parsers
+from googlecloudsdk.command_lib.service_management import common_flags
 from googlecloudsdk.core.console import console_io
 
 
-class Delete(base.Command, base_classes.BaseServiceManagementCommand):
-  """Deletes a service configuration given the service name."""
+_DETAILED_HELP = {
+    'DESCRIPTION': """\
+        Deletes a service from Google Service Management.
+
+        Services that are deleted will be retained in the system for 30 days.
+        If a deleted service is still within this retention window, it can be
+        undeleted with the undelete command.
+        """,
+    'EXAMPLES': """\
+        To delete a service named `my-service`, run:
+
+          $ {command} my-service
+
+        To run the same command asynchronously (non-blocking), run:
+
+          $ {command} my-service --async
+        """,
+}
+
+
+class Delete(base.DeleteCommand):
+  """Deletes a service."""
 
   @staticmethod
   def Args(parser):
@@ -33,7 +53,7 @@ class Delete(base.Command, base_classes.BaseServiceManagementCommand):
           on the command line after this command. Positional arguments are
           allowed.
     """
-    common_flags.service_flag(suffix='to delete').AddToParser(parser)
+    common_flags.producer_service_flag(suffix='to delete').AddToParser(parser)
 
     base.ASYNC_FLAG.AddToParser(parser)
 
@@ -47,21 +67,30 @@ class Delete(base.Command, base_classes.BaseServiceManagementCommand):
     Returns:
       The response from the Delete API call (or None if cancelled).
     """
+    messages = services_util.GetMessagesModule()
+    client = services_util.GetClientInstance()
+
     # Prompt with a warning before continuing.
-    continue_prompt_response = console_io.PromptContinue(
-        message='Are you sure? This will permanently delete the service '
-                'configuration and all of the associated consumer '
-                'information. This CANNOT be undone!',
+    console_io.PromptContinue(
+        message='Are you sure? This will set the service configuration to be '
+        'deleted, along with all of the associated consumer '
+        'information. Note: This does not immediately delete the '
+        'service configuration or data and can be undone using the '
+        'undelete command for 30 days. Only after 30 days will the '
+        'service be purged from the system.',
         prompt_string='Continue anyway',
         default=True,
-        throw_if_unattended=True)
-    if not continue_prompt_response:
-      return
+        throw_if_unattended=True,
+        cancel_on_no=True)
 
-    request = self.services_messages.ServicemanagementServicesDeleteRequest(
-        serviceName=args.service,
-    )
+    service = arg_parsers.GetServiceNameFromArg(args.service)
 
-    operation = self.services_client.services.Delete(request)
+    request = messages.ServicemanagementServicesDeleteRequest(
+        serviceName=service,)
+
+    operation = client.services.Delete(request)
 
     return services_util.ProcessOperationResult(operation, args.async)
+
+
+Delete.detailed_help = _DETAILED_HELP

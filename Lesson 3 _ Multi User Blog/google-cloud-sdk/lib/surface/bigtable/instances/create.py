@@ -13,9 +13,10 @@
 # limitations under the License.
 """bigtable instances create command."""
 
-from googlecloudsdk.api_lib.bigtable import util
+from googlecloudsdk.api_lib.bigtable import util as bigtable_util
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.bigtable import arguments
+from googlecloudsdk.core import log
 from googlecloudsdk.core import resources
 
 
@@ -41,31 +42,39 @@ class CreateInstance(base.CreateCommand):
     Returns:
       Some value that we want to have printed later.
     """
-    cli = util.GetAdminClient()
+    cli = bigtable_util.GetAdminClient()
     ref = resources.REGISTRY.Parse(
         args.instance, collection='bigtableadmin.projects.instances')
-    msgs = util.GetAdminMessages()
-    msg = msgs.BigtableadminProjectsInstancesCreateRequest(
-        projectsId=ref.projectsId,
-        createInstanceRequest=msgs.CreateInstanceRequest(
-            instanceId=ref.Name(),
-            instance=msgs.Instance(displayName=args.description),
-            clusters=msgs.CreateInstanceRequest.ClustersValue(
-                additionalProperties=[
-                    msgs.CreateInstanceRequest.ClustersValue.AdditionalProperty(
-                        key=args.cluster,
-                        value=msgs.Cluster(
-                            serveNodes=args.cluster_num_nodes,
-                            defaultStorageType=(
-                                msgs.Cluster.DefaultStorageTypeValueValuesEnum(
-                                    args.cluster_storage_type)),
-                            # TODO(user): switch location to resource
-                            # when b/29566669 is fixed on API
-                            location=util.LocationUrl(args.cluster_zone)))
-                ])))
+    parent_ref = resources.REGISTRY.Create(
+        'bigtableadmin.projects', projectId=ref.projectsId)
+    msgs = bigtable_util.GetAdminMessages()
+    msg = msgs.CreateInstanceRequest(
+        instanceId=ref.Name(),
+        parent=parent_ref.RelativeName(),
+        instance=msgs.Instance(displayName=args.description),
+        clusters=msgs.CreateInstanceRequest.ClustersValue(
+            additionalProperties=[
+                msgs.CreateInstanceRequest.ClustersValue.AdditionalProperty(
+                    key=args.cluster,
+                    value=msgs.Cluster(
+                        serveNodes=args.cluster_num_nodes,
+                        defaultStorageType=(
+                            msgs.Cluster.DefaultStorageTypeValueValuesEnum(
+                                args.cluster_storage_type)),
+                        # TODO(user): switch location to resource
+                        # when b/29566669 is fixed on API
+                        location=bigtable_util.LocationUrl(args.cluster_zone)))
+            ]))
     result = cli.projects_instances.Create(msg)
-    if not args.async:
-      # TODO(user): enable this line when b/29563942 is fixed in apitools
-      pass
-      # util.WaitForOpV2(result, 'Creating instance')
-    return result
+    operation_ref = resources.REGISTRY.ParseRelativeName(
+        result.name, 'bigtableadmin.operations')
+
+    if args.async:
+      log.CreatedResource(
+          operation_ref,
+          kind='bigtable instance {0}'.format(ref.Name()),
+          async=True)
+      return result
+
+    return bigtable_util.WaitForInstance(
+        cli, operation_ref, 'Creating bigtable instance {0}'.format(ref.Name()))

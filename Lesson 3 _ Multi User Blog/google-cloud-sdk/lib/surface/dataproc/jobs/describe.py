@@ -19,16 +19,16 @@ from googlecloudsdk.calliope import base
 
 
 class Describe(base.DescribeCommand):
-  """View the details of a job."""
+  """View the details of a job.
 
-  detailed_help = {
-      'DESCRIPTION': '{description}',
-      'EXAMPLES': """\
-          To view the details of a job, run:
+  View the details of a job.
 
-            $ {command} job_id
-          """,
-  }
+  ## EXAMPLES
+
+  To view the details of a job, run:
+
+    $ {command} job_id
+  """
 
   @staticmethod
   def Args(parser):
@@ -41,7 +41,9 @@ class Describe(base.DescribeCommand):
     client = self.context['dataproc_client']
 
     job_ref = util.ParseJob(args.id, self.context)
-    request = job_ref.Request()
 
-    job = client.projects_regions_jobs.Get(request)
-    return job
+    return client.projects_regions_jobs.Get(
+        client.MESSAGES_MODULE.DataprocProjectsRegionsJobsGetRequest(
+            projectId=job_ref.projectId,
+            region=job_ref.region,
+            jobId=job_ref.jobId))

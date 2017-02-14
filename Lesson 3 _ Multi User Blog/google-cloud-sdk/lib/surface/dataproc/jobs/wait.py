@@ -20,16 +20,16 @@ from googlecloudsdk.core import log
 
 
 class Wait(base.Command):
-  """View the output of a job as it runs or after it completes."""
+  """View the output of a job as it runs or after it completes.
 
-  detailed_help = {
-      'DESCRIPTION': '{description}',
-      'EXAMPLES': """\
-          To view the output of a job as it runs, run:
+  View the output of a job as it runs or after it completes.
 
-            $ {command} job_id
-          """,
-  }
+  ## EXAMPLES
+
+  To view the output of a job as it runs, run:
+
+    $ {command} job_id
+  """
 
   @staticmethod
   def Args(parser):
@@ -43,9 +43,13 @@ class Wait(base.Command):
     messages = self.context['dataproc_messages']
 
     job_ref = util.ParseJob(args.id, self.context)
-    request = job_ref.Request()
 
-    job = client.projects_regions_jobs.Get(request)
+    job = client.projects_regions_jobs.Get(
+        messages.DataprocProjectsRegionsJobsGetRequest(
+            projectId=job_ref.projectId,
+            region=job_ref.region,
+            jobId=job_ref.jobId))
+
     # TODO(user) Check if Job is still running and fail or handle 401.
 
     job = util.WaitForJobTermination(

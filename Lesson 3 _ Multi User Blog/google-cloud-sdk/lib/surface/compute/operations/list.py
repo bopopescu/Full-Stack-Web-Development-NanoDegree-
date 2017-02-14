@@ -157,7 +157,7 @@ class ListGA(base_classes.BaseLister):
                  project=project)))
       if args.regions is not None:
         args_region_names = [
-            self.CreateGlobalReference(region, resource_type='regions').Name()
+            self.resources.Parse(region, collection='compute.regions').Name()
             for region in args.regions or []]
         # If no regions were provided by the user, fetch a list.
         region_names = (
@@ -176,7 +176,7 @@ class ListGA(base_classes.BaseLister):
                    project=self.project)))
       if args.zones is not None:
         args_zone_names = [
-            self.CreateGlobalReference(zone, resource_type='zones').Name()
+            self.resources.Parse(zone, collection='compute.zones').Name()
             for zone in args.zones or []]
         # If no zones were provided by the user, fetch a list.
         zone_names = (
@@ -206,8 +206,7 @@ class ListGA(base_classes.BaseLister):
         requests=requests,
         http=self.http,
         batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None)
+        errors=errors)
 
 
 @base.ReleaseTracks(base.ReleaseTrack.ALPHA, base.ReleaseTrack.BETA)
@@ -233,6 +232,9 @@ ListBeta.detailed_help = {
         By default, all global, regional, zonal and Compute Accounts operations
         are listed. The results can be narrowed by providing combinations of
         the --zones, --regions, --global and --accounts flags.
+
+        Note: *{command}* displays operations fewer than 14 days old, up to a
+        maximum of 5000.
         """,
     'EXAMPLES': """\
         To list all operations in a project in table form, run:

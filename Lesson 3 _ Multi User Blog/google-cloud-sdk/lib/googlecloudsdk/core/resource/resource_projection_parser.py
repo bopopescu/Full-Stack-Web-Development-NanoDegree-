@@ -14,6 +14,7 @@
 
 """A class for parsing a resource projection expression."""
 
+import copy
 import re
 
 from googlecloudsdk.core.resource import resource_exceptions
@@ -21,7 +22,6 @@ from googlecloudsdk.core.resource import resource_filter
 from googlecloudsdk.core.resource import resource_lex
 from googlecloudsdk.core.resource import resource_projection_spec
 from googlecloudsdk.core.resource import resource_transform
-from googlecloudsdk.third_party.py27 import py27_copy as copy
 
 
 class Parser(object):
@@ -50,7 +50,7 @@ class Parser(object):
     _snake_re: Compiled re for converting key names to angry snake case.
   """
 
-  _BOOLEAN_ATTRIBUTES = ['optional', 'reverse']
+  _BOOLEAN_ATTRIBUTES = ['optional', 'reverse', 'wrap']
 
   def __init__(self, defaults=None, symbols=None, aliases=None, compiler=None):
     """Constructor.
@@ -110,6 +110,7 @@ class Parser(object):
       self.skip_reorder = False
       self.subformat = None
       self.transform = None
+      self.wrap = None
 
     def __str__(self):
       option = []
@@ -121,6 +122,8 @@ class Parser(object):
         option.append('reverse')
       if self.subformat:
         option.append('subformat')
+      if self.wrap:
+        option.append('wrap')
       if option:
         options = ', [{0}]'.format('|'.join(option))
       else:
@@ -239,6 +242,10 @@ class Parser(object):
       attribute.transform = attribute_add.transform
     if attribute_add.subformat:
       attribute.subformat = attribute_add.subformat
+    if attribute_add.wrap is not None:
+      attribute.wrap = attribute_add.wrap
+    elif attribute.wrap is None:
+      attribute.wrap = False
     self._projection.AddAlias(attribute.label, key)
 
     if not self.__key_attributes_only or attribute.hidden:
@@ -332,6 +339,8 @@ class Parser(object):
         attribute.reverse = value
       elif name == 'sort':
         attribute.order = value
+      elif name == 'wrap':
+        attribute.wrap = value
       else:
         raise resource_exceptions.ExpressionSyntaxError(
             'Unknown key attribute [{0}].'.format(self._lex.Annotate(here)))
@@ -355,7 +364,7 @@ class Parser(object):
       func_name = key.pop()
       attribute.transform = self._lex.Transform(func_name,
                                                 self._projection.active)
-      func_name = attribute.transform.Name()
+      func_name = attribute.transform.name
     else:
       func_name = None
     self._lex.SkipSpace()
@@ -366,11 +375,12 @@ class Parser(object):
       conditionals = self._projection.symbols.get(
           resource_transform.GetTypeDataName('conditionals'))
 
-      def GlobalRestriction(key):
-        return getattr(conditionals, key, None)
+      def EvalGlobalRestriction(unused_obj, restriction, unused_pattern):
+        return getattr(conditionals, restriction, None)
 
       defaults = resource_projection_spec.ProjectionSpec(
-          symbols={'global': GlobalRestriction})
+          symbols={resource_projection_spec.GLOBAL_RESTRICTION_NAME:
+                   EvalGlobalRestriction})
       if not resource_filter.Compile(attribute.transform.conditional,
                                      defaults=defaults).Evaluate(conditionals):
         return

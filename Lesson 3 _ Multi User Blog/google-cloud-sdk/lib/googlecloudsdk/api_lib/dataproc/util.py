@@ -15,15 +15,17 @@
 """Common utilities for the gcloud dataproc tool."""
 
 import time
+import urlparse
 import uuid
 
 from apitools.base.py import encoding
 from apitools.base.py import exceptions as apitools_exceptions
 
 from googlecloudsdk.api_lib.dataproc import constants
+from googlecloudsdk.api_lib.dataproc import exceptions
 from googlecloudsdk.api_lib.dataproc import storage_helpers
-from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.core import log
+from googlecloudsdk.core.console import console_attr
 from googlecloudsdk.core.console import progress_tracker
 
 
@@ -62,7 +64,7 @@ def WaitForOperation(
     request.
 
   Raises:
-    ToolException: if the operation times out or finishes with an error.
+    OperationError: if the operation times out or finishes with an error.
   """
   client = context['dataproc_client']
   messages = context['dataproc_messages']
@@ -77,18 +79,17 @@ def WaitForOperation(
         operation = client.projects_regions_operations.Get(request)
         if operation.done:
           break
-      except apitools_exceptions.HttpError as error:
-        exc = exceptions.HttpException(error)
-        log.debug('GetOperation failed:\n' + exc.payload.status_message)
+      except apitools_exceptions.HttpError:
         # Keep trying until we timeout in case error is transient.
+        pass
       time.sleep(poll_period_s)
   # TODO(user): Parse operation metadata.
   log.debug('Operation:\n' + encoding.MessageToJson(operation))
   if not operation.done:
-    raise exceptions.ToolException(
+    raise exceptions.OperationTimeoutError(
         'Operation [{0}] timed out.'.format(operation.name))
   elif operation.error:
-    raise exceptions.ToolException(
+    raise exceptions.OperationError(
         'Operation [{0}] failed: {1}.'.format(
             operation.name, FormatRpcError(operation.error)))
 
@@ -104,20 +105,19 @@ def WaitForResourceDeletion(
     timeout_s=60,
     poll_period_s=5):
   """Poll Dataproc resource until it no longer exists."""
-  request = resource_ref.Request()
   with progress_tracker.ProgressTracker(message, autotick=True):
     start_time = time.time()
     while timeout_s > (time.time() - start_time):
       try:
-        request_method(request)
+        request_method(resource_ref)
       except apitools_exceptions.HttpError as error:
         if error.status_code == 404:
           # Object deleted
           return
-        log.debug('Request [{0}] failed:\n{1}', request, error)
+        log.debug('Get request for [{0}] failed:\n{1}', resource_ref, error)
         # Keep trying until we timeout in case error is transient.
       time.sleep(poll_period_s)
-  raise exceptions.ToolException(
+  raise exceptions.OperationTimeoutError(
       'Deleting resource [{0}] timed out.'.format(resource_ref))
 
 
@@ -158,20 +158,28 @@ def WaitForJobTermination(
     request.
 
   Raises:
-    ToolException: if the operation times out or finishes with an error.
+    OperationError: if the operation times out or finishes with an error.
   """
   client = context['dataproc_client']
   job_ref = ParseJob(job.reference.jobId, context)
-  request = job_ref.Request()
+  request = client.MESSAGES_MODULE.DataprocProjectsRegionsJobsGetRequest(
+      projectId=job_ref.projectId,
+      region=job_ref.region,
+      jobId=job_ref.jobId)
   driver_log_stream = None
   last_job_poll_time = 0
   job_complete = False
   wait_display = None
+  driver_output_uri = None
 
   def ReadDriverLogIfPresent():
     if driver_log_stream and driver_log_stream.open:
       # TODO(user): Don't read all output.
       driver_log_stream.ReadIntoWritable(log.err)
+
+  def PrintEqualsLine():
+    attr = console_attr.GetConsoleAttr()
+    log.err.Print('=' * attr.GetTermSize()[0])
 
   if stream_driver_log:
     log.status.Print('Waiting for job output...')
@@ -205,17 +213,23 @@ def WaitForJobTermination(
         last_job_poll_time = now
         try:
           job = client.projects_regions_jobs.Get(request)
-          if (stream_driver_log
-              and not driver_log_stream
-              and job.driverOutputResourceUri):
-            driver_log_stream = storage_helpers.StorageObjectSeriesStream(
-                job.driverOutputResourceUri)
         except apitools_exceptions.HttpError as error:
-          log.warn('GetJob failed:\n%s', error)
+          log.warn('GetJob failed:\n{1}', error)
           # Keep trying until we timeout in case error is transient.
+        if (stream_driver_log
+            and job.driverOutputResourceUri
+            and job.driverOutputResourceUri != driver_output_uri):
+          if driver_output_uri:
+            PrintEqualsLine()
+            log.warn("Job attempt failed. Streaming new attempt's output.")
+            PrintEqualsLine()
+          driver_output_uri = job.driverOutputResourceUri
+          driver_log_stream = storage_helpers.StorageObjectSeriesStream(
+              job.driverOutputResourceUri)
       time.sleep(log_poll_period_s)
       now = time.time()
 
+  # TODO(b/34836493): Get better test coverage of the next 20 lines.
   state = job.status.state
   if state is not goal_state and job.status.details:
     # Just log details, because the state will be in the error message.
@@ -229,10 +243,10 @@ def WaitForJobTermination(
         log.warn('Job terminated, but output did not finish streaming.')
     if state is goal_state:
       return job
-    raise exceptions.ToolException(
+    raise exceptions.JobError(
         'Job [{0}] entered state [{1}] while waiting for [{2}].'.format(
             job_ref.jobId, state, goal_state))
-  raise exceptions.ToolException(
+  raise exceptions.JobTimeoutError(
       'Job [{0}] timed out while in state [{1}].'.format(
           job_ref.jobId, state))
 
@@ -247,6 +261,18 @@ def ParseJob(job_id, context):
   resources = context['resources']
   ref = resources.Parse(job_id, collection='dataproc.projects.regions.jobs')
   return ref
+
+
+def ParseOperation(operation, context):
+  resources = context['resources']
+  collection = 'dataproc.projects.regions.operations'
+  # Dataproc usually refers to Operations by relative name, which must be
+  # parsed explicitly until resources.Parse supports it.
+  # TODO(user): Remove once Parse delegates to ParseRelativeName.
+  url = urlparse.urlparse(operation)
+  if not url.scheme and '/' in url.path and not url.path.startswith('/'):
+    return resources.ParseRelativeName(operation, collection=collection)
+  return resources.Parse(operation, collection=collection)
 
 
 def GetJobId(job_id=None):
@@ -267,3 +293,15 @@ class Bunch(object):
       if isinstance(value, dict):
         value = Bunch(value)
       self.__dict__[key] = value
+
+
+def AddJvmDriverFlags(parser):
+  parser.add_argument(
+      '--jar',
+      dest='main_jar',
+      help='The HCFS URI of jar file containing the driver jar.')
+  parser.add_argument(
+      '--class',
+      dest='main_class',
+      help=('The class containing the main method of the driver. Must be in a'
+            ' provided jar or jar that is already on the classpath'))

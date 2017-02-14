@@ -22,7 +22,6 @@ from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.core import log
 from googlecloudsdk.core import properties
-from googlecloudsdk.core.util import files
 
 
 @base.UnicodeIsSupported
@@ -102,7 +101,10 @@ class Import(base.Command):
     # Get the managed-zone.
     zone_ref = resources.Parse(args.zone, collection='dns.managedZones')
     try:
-      zone = dns.managedZones.Get(zone_ref.Request())
+      zone = dns.managedZones.Get(
+          dns.MESSAGES_MODULE.DnsManagedZonesGetRequest(
+              project=zone_ref.project,
+              managedZone=zone_ref.managedZone))
     except apitools_exceptions.HttpError as error:
       raise exceptions.HttpException(error)
 
@@ -117,7 +119,7 @@ class Import(base.Command):
 
     # Get the imported record-sets.
     try:
-      with files.Context(open(args.records_file)) as import_file:
+      with open(args.records_file) as import_file:
         if args.zone_file_format:
           imported = import_util.RecordSetsFromZoneFile(import_file,
                                                         zone.dnsName)

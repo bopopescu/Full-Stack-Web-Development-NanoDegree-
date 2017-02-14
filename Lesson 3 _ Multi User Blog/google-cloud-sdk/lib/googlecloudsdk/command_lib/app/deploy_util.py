@@ -43,7 +43,6 @@ from googlecloudsdk.core import metrics
 from googlecloudsdk.core import properties
 from googlecloudsdk.core.console import console_io
 from googlecloudsdk.core.console import progress_tracker
-from googlecloudsdk.core.util import files
 
 
 class VersionPromotionError(core_exceptions.Error):
@@ -61,6 +60,15 @@ class VersionPromotionError(core_exceptions.Error):
         'Original error: ' + str(err))
 
 
+GSUTIL_DEPRECATION_WARNING = """\
+Your gcloud installation has a deprecated config property enabled: \
+[app/use_gsutil], which will be removed in a future version.  Run \
+`gcloud config unset app/use_gsutil` to switch to the recommended approach.  \
+If you encounter any issues, please report using `gcloud feedback`.  To \
+revert temporarily, run `gcloud config set app/use_gsutil True`.
+"""
+
+
 class DeployOptions(object):
   """Values of options that affect deployment process in general.
 
@@ -70,52 +78,33 @@ class DeployOptions(object):
     promote: True if the deployed version should recieve all traffic.
     stop_previous_version: Stop previous version
     enable_endpoints: Enable Cloud Endpoints for the deployed app.
-    app_create: Offer to create an app if current GCP project is appless.
+    upload_strategy: deploy_app_command_util.UploadStrategy, the file upload
+       strategy to be used for this deployment.
+    use_runtime_builders: bool, whether to use the new CloudBuild-based
+      runtime builders (alternative is old externalized runtimes).
   """
 
   def __init__(self, promote, stop_previous_version, enable_endpoints,
-               app_create):
+               upload_strategy, use_runtime_builders):
     self.promote = promote
     self.stop_previous_version = stop_previous_version
     self.enable_endpoints = enable_endpoints
-    self.app_create = app_create
+    self.upload_strategy = upload_strategy
+    self.use_runtime_builders = use_runtime_builders
 
   @classmethod
-  def FromProperties(cls, enable_endpoints, app_create):
+  def FromProperties(cls, enable_endpoints, upload_strategy,
+                     use_runtime_builders):
     promote = properties.VALUES.app.promote_by_default.GetBool()
     stop_previous_version = (
         properties.VALUES.app.stop_previous_version.GetBool())
-    return cls(promote, stop_previous_version, enable_endpoints, app_create)
-
-
-def _UploadFiles(service, code_bucket_ref):
-  """Upload files in the service being deployed, if necessary.
-
-  "Necessary" here means that the service is not "hermetic." A hermetic service
-  is an image-based (i.e. Flexible) deployment that does not also serve static
-  files.
-
-  The upload method used depends on the app.use_gsutil property.
-
-  Args:
-    service: configuration for service to upload files for
-    code_bucket_ref: cloud_storage.BucketReference, the code bucket to upload to
-
-  Returns:
-    A manifest of files uploaded in the format expected by the Admin API.
-  """
-  manifest = None
-  # "Non-hermetic" services require file upload outside the Docker image.
-  if not service.is_hermetic:
+    if upload_strategy is None:
+      upload_strategy = deploy_app_command_util.UploadStrategy.PROCESSES
     if properties.VALUES.app.use_gsutil.GetBool():
-      manifest = deploy_app_command_util.CopyFilesToCodeBucket(
-          service, code_bucket_ref)
-      metrics.CustomTimedEvent(metric_names.COPY_APP_FILES)
-    else:
-      manifest = deploy_app_command_util.CopyFilesToCodeBucketNoGsUtil(
-          service, code_bucket_ref)
-      metrics.CustomTimedEvent(metric_names.COPY_APP_FILES_NO_GSUTIL)
-  return manifest
+      log.warning(GSUTIL_DEPRECATION_WARNING)
+      upload_strategy = deploy_app_command_util.UploadStrategy.GSUTIL
+    return cls(promote, stop_previous_version, enable_endpoints,
+               upload_strategy, use_runtime_builders)
 
 
 class ServiceDeployer(object):
@@ -135,7 +124,7 @@ class ServiceDeployer(object):
     self.stager = stager
     self.deploy_options = deploy_options
 
-  def _PossiblyConfigureEndpoints(self, service, new_version):
+  def _PossiblyConfigureEndpoints(self, service, source_dir, new_version):
     """Configures endpoints for this service (if enabled).
 
     If the app has enabled Endpoints API Management features, pass control to
@@ -148,23 +137,26 @@ class ServiceDeployer(object):
     Args:
       service: yaml_parsing.ServiceYamlInfo, service configuration to be
         deployed
+      source_dir: str, path to the service's source directory
       new_version: version_util.Version describing where to deploy the service
 
     Returns:
       EndpointsServiceInfo, or None if endpoints were not created.
     """
     if self.deploy_options.enable_endpoints:
-      return cloud_endpoints.ProcessEndpointsService(service,
+      return cloud_endpoints.ProcessEndpointsService(service, source_dir,
                                                      new_version.project)
     return None
 
-  def _PossiblyBuildAndPush(self, new_version, service, image, code_bucket_ref):
+  def _PossiblyBuildAndPush(self, new_version, service, source_dir, image,
+                            code_bucket_ref):
     """Builds and Pushes the Docker image if necessary for this service.
 
     Args:
       new_version: version_util.Version describing where to deploy the service
       service: yaml_parsing.ServiceYamlInfo, service configuration to be
         deployed
+      source_dir: str, path to the service's source directory
       image: str or None, the URL for the Docker image to be deployed (if image
         already exists).
       code_bucket_ref: cloud_storage.BucketReference where the service's files
@@ -175,12 +167,17 @@ class ServiceDeployer(object):
         service does not require an image.
     """
     if service.RequiresImage():
-      if service.env == util.Environment.FLEXIBLE:
+      if service.env in [util.Environment.FLEX, util.Environment.MANAGED_VMS]:
         log.warning('Deployment of App Engine Flexible Environment apps is '
                     'currently in Beta')
       if not image:
         image = deploy_command_util.BuildAndPushDockerImage(
-            new_version.project, service, new_version.id, code_bucket_ref)
+            new_version.project, service, source_dir, new_version.id,
+            code_bucket_ref, self.deploy_options.use_runtime_builders)
+      elif service.parsed.skip_files.regex:
+        log.warning('Deployment of service [{0}] will ignore the skip_files '
+                    'field in the configuration file, because the image has '
+                    'already been built.'.format(new_version.service))
     else:
       image = None
     return image
@@ -236,26 +233,28 @@ class ServiceDeployer(object):
                      .format(service=new_version.service))
 
     with self.stager.Stage(service.file, service.runtime,
-                           service.env) as app_yaml:
-      if app_yaml:
-        app_dir = os.path.dirname(app_yaml)
-      else:
-        app_dir = os.getcwd()
-      with files.ChDir(app_dir):
-        endpoints_info = self._PossiblyConfigureEndpoints(service, new_version)
-        image = self._PossiblyBuildAndPush(new_version, service, image,
-                                           code_bucket_ref)
-        manifest = _UploadFiles(service, code_bucket_ref)
+                           service.env) as staging_dir:
+      source_dir = staging_dir or os.path.dirname(service.file)
+      endpoints_info = self._PossiblyConfigureEndpoints(
+          service, source_dir, new_version)
+      image = self._PossiblyBuildAndPush(
+          new_version, service, source_dir, image, code_bucket_ref)
+      manifest = None
+      # "Non-hermetic" services require file upload outside the Docker image.
+      if not service.is_hermetic:
+        manifest = deploy_app_command_util.CopyFilesToCodeBucket(
+            service, source_dir, code_bucket_ref,
+            self.deploy_options.upload_strategy)
 
-        # Actually create the new version of the service.
-        message = 'Updating service [{service}]'.format(
-            service=new_version.service)
-        with progress_tracker.ProgressTracker(message):
-          self.api_client.DeployService(new_version.service, new_version.id,
-                                        service, manifest, image,
-                                        endpoints_info)
-          metrics.CustomTimedEvent(metric_names.DEPLOY_API)
-          self._PossiblyPromote(all_services, new_version)
+      # Actually create the new version of the service.
+      message = 'Updating service [{service}]'.format(
+          service=new_version.service)
+      with progress_tracker.ProgressTracker(message):
+        self.api_client.DeployService(new_version.service, new_version.id,
+                                      service, manifest, image,
+                                      endpoints_info)
+        metrics.CustomTimedEvent(metric_names.DEPLOY_API)
+        self._PossiblyPromote(all_services, new_version)
 
 
 def ArgsDeploy(parser):
@@ -268,13 +267,13 @@ def ArgsDeploy(parser):
   flags.IGNORE_CERTS_FLAG.AddToParser(parser)
   flags.DOCKER_BUILD_FLAG.AddToParser(parser)
   parser.add_argument(
-      '--version', '-v',
+      '--version', '-v', type=flags.VERSION_TYPE,
       help='The version of the app that will be created or replaced by this '
       'deployment.  If you do not specify a version, one will be generated for '
       'you.')
   parser.add_argument(
       '--bucket',
-      type=storage_util.BucketReference.Argument,
+      type=storage_util.BucketReference.FromArgument,
       help=("The Google Cloud Storage bucket used to stage files associated "
             "with the deployment. If this argument is not specified, the "
             "application's default code bucket is used."))
@@ -320,12 +319,30 @@ def ArgsDeploy(parser):
       help=argparse.SUPPRESS)
 
 
-def RunDeploy(unused_self, args, enable_endpoints=False, app_create=False):
-  """Perform a deployment based on the given args."""
-  version_id = args.version or util.GenerateVersionId()
-  flags.ValidateVersion(version_id)
+def RunDeploy(args, enable_endpoints=False, use_beta_stager=False,
+              upload_strategy=None, use_runtime_builders=False):
+  """Perform a deployment based on the given args.
+
+  Args:
+    args: argparse.Namespace, An object that contains the values for the
+        arguments specified in the ArgsDeploy() function.
+    enable_endpoints: Enable Cloud Endpoints for the deployed app.
+    use_beta_stager: Use the stager registry defined for the beta track rather
+        than the default stager registry.
+    upload_strategy: deploy_app_command_util.UploadStrategy, the parallelism
+      straetgy to use for uploading files, or None to use the default.
+    use_runtime_builders: bool, whether to use the new CloudBuild-based
+      runtime builders (alternative is old externalized runtimes).
+
+  Returns:
+    A dict on the form `{'versions': new_versions, 'configs': updated_configs}`
+    where new_versions is a list of version_util.Version, and updated_configs
+    is a list of config file identifiers, see yaml_parsing.ConfigYamlInfo.
+  """
   project = properties.VALUES.core.project.Get(required=True)
-  deploy_options = DeployOptions.FromProperties(enable_endpoints, app_create)
+  deploy_options = DeployOptions.FromProperties(
+      enable_endpoints, upload_strategy=upload_strategy,
+      use_runtime_builders=use_runtime_builders)
 
   # Parse existing app.yamls or try to generate a new one if the directory is
   # empty.
@@ -338,6 +355,7 @@ def RunDeploy(unused_self, args, enable_endpoints=False, app_create=False):
   else:
     app_config = yaml_parsing.AppConfigSet(args.deployables)
 
+  # If applicable, sort services by order they were passed to the command.
   services = app_config.Services()
 
   if not args.skip_image_url_validation:
@@ -357,9 +375,11 @@ def RunDeploy(unused_self, args, enable_endpoints=False, app_create=False):
   ac_client = appengine_client.AppengineClient(
       args.server, args.ignore_bad_certs)
 
-  app = _PossiblyCreateApp(api_client, project, deploy_options.app_create)
+  app = _PossiblyCreateApp(api_client, project)
+  app = _PossiblyRepairApp(api_client, app)
 
   # Tell the user what is going to happen, and ask them to confirm.
+  version_id = args.version or util.GenerateVersionId()
   deployed_urls = output_helpers.DisplayProposedDeployment(
       app, project, app_config, version_id, deploy_options.promote)
   console_io.PromptContinue(cancel_on_no=True)
@@ -378,11 +398,16 @@ def RunDeploy(unused_self, args, enable_endpoints=False, app_create=False):
   else:
     code_bucket_ref = None
     all_services = {}
-
   new_versions = []
-  stager = staging.GetNoopStager() if args.skip_staging else staging.GetStager()
+  if args.skip_staging:
+    stager = staging.GetNoopStager()
+  elif use_beta_stager:
+    stager = staging.GetBetaStager()
+  else:
+    stager = staging.GetStager()
   deployer = ServiceDeployer(api_client, stager, deploy_options)
-  for (name, service) in services.iteritems():
+
+  for name, service in services.iteritems():
     new_version = version_util.Version(project, name, version_id)
     deployer.Deploy(service, new_version, code_bucket_ref, args.image_url,
                     all_services)
@@ -414,8 +439,8 @@ def PrintPostDeployHints(new_versions, updated_configs):
   if yaml_parsing.ConfigYamlInfo.CRON in updated_configs:
     log.status.Print('\nCron jobs have been updated.')
     if yaml_parsing.ConfigYamlInfo.QUEUE not in updated_configs:
-      log.status.Print('\nThe Cloud Platform Console Task Queues page has a '
-                       'tab that shows the tasks that are running cron jobs.')
+      log.status.Print('\nVisit the Cloud Platform Console Task Queues page '
+                       'to view your queues and cron jobs.')
   if yaml_parsing.ConfigYamlInfo.DISPATCH in updated_configs:
     log.status.Print('\nCustom routings have been updated.')
   if yaml_parsing.ConfigYamlInfo.DOS in updated_configs:
@@ -426,8 +451,8 @@ def PrintPostDeployHints(new_versions, updated_configs):
                      'and redeploy it.')
   if yaml_parsing.ConfigYamlInfo.QUEUE in updated_configs:
     log.status.Print('\nTask queues have been updated.')
-    log.status.Print('\nThe Cloud Platform Console Task Queues page has a tab '
-                     'that shows the tasks that are running cron jobs.')
+    log.status.Print('\nVisit the Cloud Platform Console Task Queues page '
+                     'to view your queues and cron jobs.')
   if yaml_parsing.ConfigYamlInfo.INDEX in updated_configs:
     log.status.Print('\nIndexes are being rebuilt. This may take a moment.')
 
@@ -442,23 +467,21 @@ def PrintPostDeployHints(new_versions, updated_configs):
     service_hint = ' -s {svc}'.format(svc=service)
   log.status.Print(
       '\nYou can read logs from the command line by running:\n'
-      '  $ gcloud app logs read')
+      '  $ gcloud app logs read' + (service_hint or ' -s default'))
   log.status.Print(
       '\nTo view your application in the web browser run:\n'
       '  $ gcloud app browse' + service_hint)
 
 
-def _PossiblyCreateApp(api_client, project, app_create):
+def _PossiblyCreateApp(api_client, project):
   """Returns an app resource, and creates it if the stars are aligned.
 
-  App creation happens only if the current project is app-less,
-  app_create is True, we are running in interactive mode and the user
-  explicitly wants to.
+  App creation happens only if the current project is app-less, we are running
+  in interactive mode and the user explicitly wants to.
 
   Args:
     api_client: Admin API client.
     project: The GCP project/app id.
-    app_create: True if interactive app creation should be allowed.
 
   Returns:
     An app object (never returns None).
@@ -470,14 +493,38 @@ def _PossiblyCreateApp(api_client, project, app_create):
     return api_client.GetApplication()
   except api_lib_exceptions.NotFoundError:
     # Invariant: GCP Project does exist but (singleton) GAE app is not yet
-    # created. Offer to create one if the following conditions are true:
-    # 1. `app_create` is True (currently `beta` only)
-    # 2. We are currently running in interactive mode
-    msg = output_helpers.CREATE_APP_PROMPT.format(project=project)
-    if (app_create and console_io.CanPrompt() and
-        console_io.PromptContinue(message=msg)):
-      # Equivalent to running `gcloud beta app create`
+    # created.
+    #
+    # Check for interactive mode, since this action is irreversible and somewhat
+    # surprising. CreateAppInteractively will provide a cancel option for
+    # interactive users, and MissingApplicationException includes instructions
+    # for non-interactive users to fix this.
+    log.debug('No app found:', exc_info=True)
+    if console_io.CanPrompt():
+
+      # Equivalent to running `gcloud app create`
       create_util.CreateAppInteractively(api_client, project)
       # App resource must be fetched again
       return api_client.GetApplication()
     raise exceptions.MissingApplicationError(project)
+
+
+def _PossiblyRepairApp(api_client, app):
+  """Repairs the app if necessary and returns a healthy app object.
+
+  An app is considered unhealthy if the codeBucket field is missing.
+  This may include more conditions in the future.
+
+  Args:
+    api_client: Admin API client.
+    app: App object (with potentially missing resources).
+
+  Returns:
+    An app object (either the same or a new one), which contains the right
+    resources, including code bucket.
+  """
+  if not app.codeBucket:
+    with progress_tracker.ProgressTracker('Initializing App Engine resources'):
+      api_client.RepairApplication()
+      app = api_client.GetApplication()
+  return app

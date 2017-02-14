@@ -33,6 +33,7 @@ from googlecloudsdk.core.configurations import named_configs
 from googlecloudsdk.core.console import console_attr
 from googlecloudsdk.core.diagnostics import http_proxy_setup
 from googlecloudsdk.core.updater import update_manager
+from googlecloudsdk.core.util import files as file_utils
 from googlecloudsdk.core.util import http_proxy_types
 from googlecloudsdk.core.util import platforms
 
@@ -114,6 +115,10 @@ class InstallationInfo(object):
       self.old_tool_paths = []
       self.on_path = False
 
+    self.kubectl = file_utils.SearchForExecutableOnPath('kubectl')
+    if self.kubectl:
+      self.kubectl = self.kubectl[0]
+
   def __str__(self):
     out = StringIO.StringIO()
     out.write(u'Installation Root: [{0}]\n'.format(
@@ -133,6 +138,7 @@ class InstallationInfo(object):
 
     out.write(u'System PATH: [{0}]\n'.format(self.path))
     out.write(u'Cloud SDK on PATH: [{0}]\n'.format(self.on_path))
+    out.write(u'Kubectl on PATH: [{0}]\n'.format(self.kubectl or False))
 
     if self.old_tool_paths:
       out.write(u'\nWARNING: There are old versions of the Google Cloud '
@@ -294,7 +300,7 @@ class LogData(object):
   TRACEBACK_MARKER = 'BEGIN CRASH STACKTRACE\n'
 
   # This shows the command run in the log file
-  COMMAND_REGEXP = r'Running (gcloud\.[a-z.]+)'
+  COMMAND_REGEXP = r'Running (gcloud(?:\.[a-z-]+)*)'
 
   def __init__(self, filename, command, contents, traceback):
     self.filename = filename
@@ -309,10 +315,23 @@ class LogData(object):
 
   @property
   def relative_path(self):
+    """Returns path of log file relative to log directory, or the full path.
+
+    Returns the full path when the log file is not *in* the log directory.
+
+    Returns:
+      str, the relative or full path of log file.
+    """
     logs_dir = config.Paths().logs_dir
-    if not self.filename.startswith(logs_dir):
+    if logs_dir is None:
       return self.filename
-    return self.filename[len(logs_dir + os.path.sep):]
+
+    rel_path = os.path.relpath(self.filename, config.Paths().logs_dir)
+    if rel_path.startswith(os.path.pardir + os.path.sep):
+      # That is, filename is NOT in logs_dir
+      return self.filename
+
+    return rel_path
 
   @property
   def date(self):

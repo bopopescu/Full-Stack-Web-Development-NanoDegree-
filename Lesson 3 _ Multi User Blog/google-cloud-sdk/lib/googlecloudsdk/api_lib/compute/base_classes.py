@@ -15,6 +15,8 @@
 """Base classes for abstracting away common logic."""
 
 import abc
+import collections
+import copy
 import cStringIO
 import json
 import textwrap
@@ -40,13 +42,13 @@ from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions as calliope_exceptions
 from googlecloudsdk.command_lib.compute import flags
 from googlecloudsdk.core import apis as core_apis
+from googlecloudsdk.core import log
 from googlecloudsdk.core import properties
 from googlecloudsdk.core import resolvers
 from googlecloudsdk.core import resources
 from googlecloudsdk.core.console import console_io
 from googlecloudsdk.core.util import edit
-from googlecloudsdk.third_party.py27 import py27_collections as collections
-from googlecloudsdk.third_party.py27 import py27_copy as copy
+from googlecloudsdk.core.util import text
 import yaml
 
 
@@ -295,8 +297,7 @@ class BaseLister(base.ListCommand, BaseCommand):
     items = self.FilterResults(args, self.GetResources(args, errors))
     items = lister.ProcessResults(
         resources=items,
-        field_selector=field_selector,
-        limit=args.limit)
+        field_selector=field_selector)
     items = self.ComputeDynamicProperties(args, items)
 
     for item in items:
@@ -571,8 +572,7 @@ class MultiScopeLister(BaseLister):
         requests=requests,
         http=self.http,
         batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None)
+        errors=errors)
 
 
 def GetMultiScopeListerHelp(resource, scopes):
@@ -583,14 +583,14 @@ def GetMultiScopeListerHelp(resource, scopes):
           To list all {0} in zones ``us-central1-b'' and ``europe-west1-d'',
           run:
 
-            $ {{command}} --zones us-central1 europe-west1
+            $ {{command}} --zones us-central1,europe-west1
   """
   region_example_text = """\
 
           To list all {0} in the ``us-central1'' and ``europe-west1'' regions,
           run:
 
-            $ {{command}} --regions us-central1 europe-west1
+            $ {{command}} --regions us-central1,europe-west1
   """
   global_example_text = """\
 
@@ -717,8 +717,7 @@ class BaseDescriber(base.DescribeCommand, BaseCommand):
         requests=[get_request],
         http=self.http,
         batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None)
+        errors=errors)
 
     resource_list = lister.ProcessResults(objects, field_selector=None)
     resource_list = list(self.ComputeDynamicProperties(args, resource_list))
@@ -903,8 +902,16 @@ class MultiScopeDescriber(BaseDescriber):
 
 
 def GetMultiScopeDescriberHelp(resource, scopes):
-  """Returns the detailed help dict for a multiscope describe command."""
+  """Returns the detailed help dict for a multiscope describe command.
 
+  Args:
+    resource: resource name, singular form with no preposition
+    scopes: global/regional/zonal or mix of them
+
+  Returns:
+    Help for multi-scope describe command.
+  """
+  article = text.GetArticle(resource)
   zone_example_text = """\
 
           To get details about a zonal {0} in the ``us-central1-b'' zone, run:
@@ -925,10 +932,11 @@ def GetMultiScopeDescriberHelp(resource, scopes):
             $ {{command}} --global
   """
   return {
-      'brief': 'Display detailed information about a ' + resource,
+      'brief': ('Display detailed information about {0} {1}'
+                .format(article, resource)),
       'DESCRIPTION': """\
-          *{{command}}* displays all data associated with a {0} in a project.
-          """.format(resource),
+          *{{command}}* displays all data associated with {0} {1} in a project.
+          """.format(article, resource),
       'EXAMPLES': ("""\
           """ + (global_example_text
                  if ScopeType.global_scope in scopes else '')
@@ -965,20 +973,6 @@ class BaseAsyncMutator(BaseCommand):
   def service(self):
     """The service that can mutate resources."""
 
-  @property
-  def custom_get_requests(self):
-    """Returns request objects for getting the mutated resources.
-
-    This should be a dict mapping operation targetLink names to
-    requests that can be passed to batch_helper. This is useful for
-    verbs whose operations do not point to the resources being mutated
-    (e.g., Disks.createSnapshot).
-
-    If None, the operations' targetLinks are used to fetch the mutated
-    resources.
-    """
-    return None
-
   @abc.abstractproperty
   def method(self):
     """The method name on the service as a string."""
@@ -1007,34 +1001,32 @@ class BaseAsyncMutator(BaseCommand):
     _ = args
     return items
 
-  def Run(self, args, request_protobufs=None, service=None):
-    if request_protobufs is None:
-      request_protobufs = self.CreateRequests(args)
-    if service is None:
-      service = self.service
-    requests = []
-    # If a method is not passed as part of a tuple then use the self.method
-    # default
-    for request in request_protobufs:
-      if isinstance(request, tuple):
-        if len(request) == 2:
-          method, proto = request
-        elif len(request) == 3:
-          service, method, proto = request
-      else:
-        method = self.method
-        proto = request
-      requests.append((service, method, proto))
+  def MakeRequests(self, requests_protobufs, errors):
+    """Send requests to the API.
 
-    errors = []
+    Args:
+      requests_protobufs: a list of requests as from CreateRequests.
+      errors: output variable. Errors from underlying
+          request_helper.MakeRequests
+
+    Returns:
+      Resource list
+    """
+
+    requests = TranslateRequestsProtobufs(requests_protobufs, self)
     # We want to run through the generator that MakeRequests returns in order to
     # actually make the requests, since these requests mutate resources.
     resource_list = list(request_helper.MakeRequests(
         requests=requests,
         http=self.http,
         batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=self.custom_get_requests))
+        errors=errors))
+
+    return resource_list
+
+  def Run(self, args):
+    errors = []
+    resource_list = self.MakeRequests(self.CreateRequests(args), errors)
 
     resource_list = lister.ProcessResults(
         resources=resource_list,
@@ -1048,6 +1040,22 @@ class BaseAsyncMutator(BaseCommand):
       utils.RaiseToolException(errors)
 
     return resource_list
+
+
+def TranslateRequestsProtobufs(requests_protobufs, command):
+  """Translates requests protobufs into requests."""
+  requests = []
+  for request in requests_protobufs:
+    if not isinstance(request, tuple):
+      requests.append((command.service, command.method, request))
+    elif len(request) == 2:
+      method, proto = request
+      requests.append((command.service, method, proto))
+    elif len(request) == 3:
+      requests.append(request)
+    else:
+      raise ValueError('Got request tuple of wrong size')
+  return requests
 
 
 class NoOutputMutator(base.SilentCommand, BaseCommand):
@@ -1298,8 +1306,7 @@ class ReadWriteCommand(BaseCommand):
         requests=[get_request],
         http=self.http,
         batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None))
+        errors=errors))
     if errors:
       utils.RaiseToolException(
           errors,
@@ -1316,6 +1323,9 @@ class ReadWriteCommand(BaseCommand):
           field_selector=property_selector.PropertySelector(
               properties=None,
               transformations=self.transformations)):
+        log.status.Print(
+            'No change requested; skipping update for [{0}].'.format(
+                resource[u'name']))
         yield resource
       return
 
@@ -1323,8 +1333,7 @@ class ReadWriteCommand(BaseCommand):
         requests=[self.GetSetRequest(args, new_object, objects[0])],
         http=self.http,
         batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None)
+        errors=errors)
 
     resource_list = lister.ProcessResults(
         resources=resource_list,
@@ -1674,8 +1683,7 @@ class BaseEdit(BaseCommand):
         requests=[self.GetSetRequest(args, new_object, self.original_object)],
         http=self.http,
         batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None))
+        errors=errors))
     if errors:
       utils.RaiseToolException(
           errors,
@@ -1692,8 +1700,7 @@ class BaseEdit(BaseCommand):
         requests=[get_request],
         http=self.http,
         batch_url=self.batch_url,
-        errors=errors,
-        custom_get_requests=None))
+        errors=errors))
     if errors:
       utils.RaiseToolException(
           errors,

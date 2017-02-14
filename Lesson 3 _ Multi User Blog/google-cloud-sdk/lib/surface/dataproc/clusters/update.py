@@ -16,31 +16,47 @@
 
 import argparse
 
+from googlecloudsdk.api_lib.dataproc import exceptions
 from googlecloudsdk.api_lib.dataproc import util
 from googlecloudsdk.calliope import base
-from googlecloudsdk.calliope import exceptions
+from googlecloudsdk.command_lib.util import labels_util
 from googlecloudsdk.core import log
 
 
 class Update(base.UpdateCommand):
-  """Update the number of worker nodes in a cluster."""
+  """Update labels and/or the number of worker nodes in a cluster.
 
-  detailed_help = {
-      'DESCRIPTION': '{description}',
-      'EXAMPLES': """\
-          To resize a cluster, run:
+  Update the number of worker nodes and/or the labels in a cluster.
 
-            $ {command} my_cluster --num-workers 5
+  ## EXAMPLES
 
-          To change the number preemptible workers in a cluster, run:
+  To resize a cluster, run:
 
-            $ {command} my_cluster --num-preemptible-workers 5
-          """,
-  }
+    $ {command} my_cluster --num-workers 5
+
+  To change the number preemptible workers in a cluster, run:
+
+    $ {command} my_cluster --num-preemptible-workers 5
+
+  To add the label 'customer=acme' to a cluster, run:
+
+    $ {command} my_cluster --update-labels=customer=acme
+
+  To update the label 'customer=ackme' to 'customer=acme', run:
+
+    $ {command} my_cluster --update-labels=customer=acme
+
+  To remove the label whose key is 'customer', run:
+
+    $ {command} my_cluster --remove-labels=customer
+
+  """
 
   @staticmethod
   def Args(parser):
     base.ASYNC_FLAG.AddToParser(parser)
+    # Allow the user to specify new labels as well as update/remove existing
+    labels_util.AddUpdateLabelsFlags(parser)
     parser.add_argument(
         'name',
         help='The name of the cluster to update.')
@@ -92,13 +108,37 @@ class Update(base.UpdateCommand):
           'config.secondary_worker_config.num_instances')
       has_changes = True
 
+    # Update labels if the user requested it
+    labels = None
+    if args.update_labels or args.remove_labels:
+      has_changes = True
+      changed_fields.append('labels')
+
+      # We need to fetch cluster first so we know what the labels look like. The
+      # labels_util.UpdateLabels will fill out the proto for us with all the
+      # updates and removals, but first we need to provide the current state
+      # of the labels
+      get_cluster_request = (
+          client.MESSAGES_MODULE.DataprocProjectsRegionsClustersGetRequest(
+              projectId=cluster_ref.projectId,
+              region=cluster_ref.region,
+              clusterName=cluster_ref.clusterName))
+      current_cluster = client.projects_regions_clusters.Get(
+          get_cluster_request)
+      labels = labels_util.UpdateLabels(
+          current_cluster.labels,
+          messages.Cluster.LabelsValue,
+          args.update_labels,
+          args.remove_labels)
+
     if not has_changes:
-      raise exceptions.ToolException(
+      raise exceptions.ArgumentError(
           'Must specify at least one cluster parameter to update.')
 
     cluster = messages.Cluster(
         config=cluster_config,
         clusterName=cluster_ref.clusterName,
+        labels=labels,
         projectId=cluster_ref.projectId)
 
     request = messages.DataprocProjectsRegionsClustersPatchRequest(
@@ -122,6 +162,10 @@ class Update(base.UpdateCommand):
         message='Waiting for cluster update operation',
         timeout_s=3600 * 3)
 
-    cluster = client.projects_regions_clusters.Get(cluster_ref.Request())
+    request = client.MESSAGES_MODULE.DataprocProjectsRegionsClustersGetRequest(
+        projectId=cluster_ref.projectId,
+        region=cluster_ref.region,
+        clusterName=cluster_ref.clusterName)
+    cluster = client.projects_regions_clusters.Get(request)
     log.UpdatedResource(cluster_ref)
     return cluster

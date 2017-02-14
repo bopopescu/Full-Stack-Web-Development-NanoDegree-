@@ -16,19 +16,42 @@
 
 import sys
 
-from googlecloudsdk.api_lib.service_management import base_classes
-from googlecloudsdk.api_lib.service_management import common_flags
 from googlecloudsdk.api_lib.service_management import services_util
 from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.service_management import arg_parsers
+from googlecloudsdk.command_lib.service_management import common_flags
 from googlecloudsdk.core import log
 
 
-OPTIONAL_PREFIX_TO_STRIP = 'operations/'
+_DETAILED_HELP = {
+    'DESCRIPTION': """\
+        This command will return information about an operation given the name
+        of that operation.
+
+        The amount of information inside an operation can be very large, so by
+        default, only a summary is returned. If you want the entire operation
+        resource, you can include the `--full` flag.
+
+        Note that the `operations/` prefix of the operation name is optional
+        and may be omitted.
+        """,
+    'EXAMPLES': """\
+        To describe an operation resource named
+        `operations/serviceConfigs.my-service.1`, run:
+
+          $ {command} serviceConfigs.my-service.1
+
+        To get the full operation resource, run:
+
+          $ {command} serviceConfigs.my-service.1 --full
+        """,
+}
+
 MAX_RESPONSE_BYTES = 1000
 
 
-class Describe(base.DescribeCommand, base_classes.BaseServiceManagementCommand):
-  """Describes a service given a service name."""
+class Describe(base.DescribeCommand):
+  """Describes an operation resource for a given operation name."""
 
   @staticmethod
   def Args(parser):
@@ -45,7 +68,7 @@ class Describe(base.DescribeCommand, base_classes.BaseServiceManagementCommand):
         '--full',
         action='store_true',
         default=False,
-        help=('Print the entire Operation resource, which could be large. '
+        help=('Print the entire operation resource, which could be large. '
               'By default, a summary will be printed instead.'))
 
   def Run(self, args):
@@ -58,22 +81,25 @@ class Describe(base.DescribeCommand, base_classes.BaseServiceManagementCommand):
     Returns:
       The response from the operations.Get API call.
     """
-    # If a user includes the leading "operations/", just strip it off
-    if args.operation.startswith(OPTIONAL_PREFIX_TO_STRIP):
-      args.operation = args.operation[len(OPTIONAL_PREFIX_TO_STRIP):]
+    messages = services_util.GetMessagesModule()
+    client = services_util.GetClientInstance()
 
-    request = self.services_messages.ServicemanagementOperationsGetRequest(
-        operationsId=args.operation,
-    )
+    operation_id = arg_parsers.GetOperationIdFromArg(args.operation)
 
-    operation = self.services_client.operations.Get(request)
+    request = messages.ServicemanagementOperationsGetRequest(
+        operationsId=operation_id,)
+
+    operation = client.operations.Get(request)
 
     if (sys.getsizeof(str(operation.response)) > MAX_RESPONSE_BYTES and
         not args.full):
-      log.warn('Response portion of Operation redacted. '
+      log.warn('Response portion of operation resource redacted. '
                'Use --full to see the whole Operation.\n')
       operation.response = None
 
     # Set async to True because we don't need to wait for the operation
     # to complete to check the status of it.
     return services_util.GetProcessedOperationResult(operation, async=True)
+
+
+Describe.detailed_help = _DETAILED_HELP

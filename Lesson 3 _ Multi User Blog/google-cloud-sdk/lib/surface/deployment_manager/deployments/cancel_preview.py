@@ -19,8 +19,10 @@ from apitools.base.py import exceptions as apitools_exceptions
 from googlecloudsdk.api_lib.deployment_manager import dm_v2_util
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
+from googlecloudsdk.command_lib.deployment_manager import dm_base
+from googlecloudsdk.command_lib.deployment_manager import dm_write
+from googlecloudsdk.command_lib.deployment_manager import flags
 from googlecloudsdk.core import log
-from googlecloudsdk.core import properties
 
 
 # Number of seconds (approximately) to wait for cancel operation to complete.
@@ -56,16 +58,8 @@ class CancelPreview(base.Command):
           on the command line after this command. Positional arguments are
           allowed.
     """
-    parser.add_argument(
-        '--async',
-        help='Return immediately and print information about the Operation in '
-        'progress rather than waiting for the Operation to complete. '
-        '(default=False)',
-        dest='async',
-        default=False,
-        action='store_true')
-
-    parser.add_argument('deployment_name', help='Deployment name.')
+    flags.AddDeploymentNameFlag(parser)
+    flags.AddAsyncFlag(parser)
 
   def Run(self, args):
     """Run 'deployments cancel-preview'.
@@ -82,17 +76,12 @@ class CancelPreview(base.Command):
     Raises:
       HttpException: An http error response was received while executing api
           request.
-      ToolException: The cancel preview operation encountered an error.
     """
-    client = self.context['deploymentmanager-client']
-    messages = self.context['deploymentmanager-messages']
-    project = properties.VALUES.core.project.Get(required=True)
-
     # Get the fingerprint from the previewing deployment to cancel.
     try:
-      current_deployment = client.deployments.Get(
-          messages.DeploymentmanagerDeploymentsGetRequest(
-              project=project,
+      current_deployment = dm_base.GetClient().deployments.Get(
+          dm_base.GetMessages().DeploymentmanagerDeploymentsGetRequest(
+              project=dm_base.GetProject(),
               deployment=args.deployment_name
           )
       )
@@ -104,12 +93,13 @@ class CancelPreview(base.Command):
       raise exceptions.HttpException(error, dm_v2_util.HTTP_ERROR_FORMAT)
 
     try:
-      operation = client.deployments.CancelPreview(
-          messages.DeploymentmanagerDeploymentsCancelPreviewRequest(
-              project=project,
+      operation = dm_base.GetClient().deployments.CancelPreview(
+          dm_base.GetMessages().
+          DeploymentmanagerDeploymentsCancelPreviewRequest(
+              project=dm_base.GetProject(),
               deployment=args.deployment_name,
               deploymentsCancelPreviewRequest=
-              messages.DeploymentsCancelPreviewRequest(
+              dm_base.GetMessages().DeploymentsCancelPreviewRequest(
                   fingerprint=fingerprint,
               ),
           )
@@ -121,23 +111,19 @@ class CancelPreview(base.Command):
     else:
       op_name = operation.name
       try:
-        dm_v2_util.WaitForOperation(client, messages, op_name, project,
-                                    'cancel-preview', OPERATION_TIMEOUT)
+        dm_write.WaitForOperation(op_name,
+                                  'cancel-preview',
+                                  dm_base.GetProject(),
+                                  timeout=OPERATION_TIMEOUT)
         log.status.Print('Cancel preview operation ' + op_name
                          + ' completed successfully.')
-      except exceptions.ToolException:
-        # Operation timed out or had errors. Print this warning, then still
-        # show whatever operation can be gotten.
-        log.error('Cancel preview operation ' + op_name
-                  + ' has errors or failed to complete within '
-                  + str(OPERATION_TIMEOUT) + ' seconds.')
       except apitools_exceptions.HttpError as error:
         raise exceptions.HttpException(error, dm_v2_util.HTTP_ERROR_FORMAT)
       try:
         # Fetch a list of the canceled resources.
-        response = client.resources.List(
-            messages.DeploymentmanagerResourcesListRequest(
-                project=project,
+        response = dm_base.GetClient().resources.List(
+            dm_base.GetMessages().DeploymentmanagerResourcesListRequest(
+                project=dm_base.GetProject(),
                 deployment=args.deployment_name,
             )
         )

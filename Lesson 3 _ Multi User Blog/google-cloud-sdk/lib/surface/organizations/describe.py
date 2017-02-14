@@ -20,7 +20,8 @@ from googlecloudsdk.command_lib.organizations import flags
 from googlecloudsdk.command_lib.organizations import orgs_base
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.ALPHA)
+@base.ReleaseTracks(
+    base.ReleaseTrack.GA, base.ReleaseTrack.BETA, base.ReleaseTrack.ALPHA)
 class Describe(orgs_base.OrganizationCommand, base.DescribeCommand):
   """Show metadata for an organization.
 
@@ -45,5 +46,9 @@ class Describe(orgs_base.OrganizationCommand, base.DescribeCommand):
     flags.IdArg('you want to describe.').AddToParser(parser)
 
   def Run(self, args):
-    request = self.GetOrganizationRef(args.id).Request()
-    return self.OrganizationsClient().Get(request)
+    service = self.OrganizationsClient()
+    ref = self.GetOrganizationRef(args.id)
+    request = (service.client.MESSAGES_MODULE
+               .CloudresourcemanagerOrganizationsGetRequest(
+                   organizationsId=ref.organizationsId))
+    return service.Get(request)

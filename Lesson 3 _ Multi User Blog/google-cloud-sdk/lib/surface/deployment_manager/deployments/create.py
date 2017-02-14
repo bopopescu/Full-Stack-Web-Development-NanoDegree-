@@ -18,17 +18,20 @@ from apitools.base.py import exceptions as apitools_exceptions
 
 from googlecloudsdk.api_lib.deployment_manager import dm_v2_util
 from googlecloudsdk.api_lib.deployment_manager import importer
-from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
+from googlecloudsdk.command_lib.deployment_manager import dm_base
+from googlecloudsdk.command_lib.deployment_manager import dm_write
+from googlecloudsdk.command_lib.deployment_manager import flags
+from googlecloudsdk.command_lib.util import labels_util
 from googlecloudsdk.core import log
-from googlecloudsdk.core import properties
 
 # Number of seconds (approximately) to wait for create operation to complete.
 OPERATION_TIMEOUT = 20 * 60  # 20 mins
 
 
 @base.UnicodeIsSupported
+@base.ReleaseTracks(base.ReleaseTrack.GA)
 class Create(base.CreateCommand):
   """Create a deployment.
 
@@ -52,42 +55,32 @@ class Create(base.CreateCommand):
   }
 
   @staticmethod
-  def Args(parser):
+  def Args(parser, version=base.ReleaseTrack.GA):
     """Args is called by calliope to gather arguments for this command.
 
     Args:
       parser: An argparse parser that you can use to add arguments that go
           on the command line after this command. Positional arguments are
           allowed.
+      version: The version this tool is running as. base.ReleaseTrack.GA
+          is the default.
     """
-    parser.add_argument(
-        '--async',
-        help='Return immediately and print information about the Operation in '
-        'progress rather than waiting for the Operation to complete. '
-        '(default=False)',
-        dest='async',
-        default=False,
-        action='store_true')
+    flags.AddAsyncFlag(parser)
+    flags.AddDeploymentNameFlag(parser)
+    flags.AddPropertiesFlag(parser)
 
-    parser.add_argument('deployment_name', help='Deployment name.')
+    if version in [base.ReleaseTrack.ALPHA]:
+      labels_util.AddCreateLabelsFlags(parser)
+    parser.add_argument(
+        '--description',
+        help='Optional description of the deployment to insert.',
+        dest='description')
 
     parser.add_argument(
         '--config',
         help='Filename of config which specifies resources to deploy.',
         dest='config',
         required=True)
-
-    parser.add_argument(
-        '--properties',
-        type=arg_parsers.ArgDict(),
-        help='A comma seperated, key=value, map '
-        'to be used when deploying a template file directly.',
-        dest='properties')
-
-    parser.add_argument(
-        '--description',
-        help='Optional description of the deployment to insert.',
-        dest='description')
 
     parser.add_argument(
         '--preview',
@@ -127,25 +120,30 @@ class Create(base.CreateCommand):
     Raises:
       HttpException: An http error response was received while executing api
           request.
-      ToolException: Config file could not be read or parsed, or the deployment
-          creation operation encountered an error.
+      ConfigError: Config file could not be read or parsed, or the
+          deployment creation operation encountered an error.
     """
-    client = self.context['deploymentmanager-client']
-    messages = self.context['deploymentmanager-messages']
-    project = properties.VALUES.core.project.Get(required=True)
-
-    deployment = messages.Deployment(
+    deployment = dm_base.GetMessages().Deployment(
         name=args.deployment_name,
         target=importer.BuildTargetConfig(
-            messages, args.config, args.properties),
+            dm_base.GetMessages(), args.config, args.properties),
     )
+    if self.ReleaseTrack() in [base.ReleaseTrack.ALPHA]:
+      label_dict = labels_util.GetUpdateLabelsDictFromArgs(args)
+      label_entry = []
+      if label_dict:
+        label_entry = [dm_base.GetMessages().DeploymentLabelEntry(key=k,
+                                                                  value=v)
+                       for k, v in sorted(label_dict.iteritems())]
+        deployment.labels = label_entry
+
     if args.description:
       deployment.description = args.description
 
     try:
-      operation = client.deployments.Insert(
-          messages.DeploymentmanagerDeploymentsInsertRequest(
-              project=project,
+      operation = dm_base.GetClient().deployments.Insert(
+          dm_base.GetMessages().DeploymentmanagerDeploymentsInsertRequest(
+              project=dm_base.GetProject(),
               deployment=deployment,
               preview=args.preview,
           )
@@ -157,18 +155,44 @@ class Create(base.CreateCommand):
     else:
       op_name = operation.name
       try:
-        dm_v2_util.WaitForOperation(client, messages, op_name, project,
-                                    'create', OPERATION_TIMEOUT)
+        dm_write.WaitForOperation(op_name,
+                                  operation_description='create',
+                                  project=dm_base.GetProject(),
+                                  timeout=OPERATION_TIMEOUT)
         log.status.Print('Create operation ' + op_name
                          + ' completed successfully.')
-      except exceptions.ToolException:
-        # Operation timed out or had errors. Print this warning, then still
-        # show whatever operation can be gotten.
-        log.error('Create operation ' + op_name
-                  + ' has errors or failed to complete within '
-                  + str(OPERATION_TIMEOUT) + ' seconds.')
       except apitools_exceptions.HttpError as error:
         raise exceptions.HttpException(error, dm_v2_util.HTTP_ERROR_FORMAT)
 
-      return dm_v2_util.FetchResourcesAndOutputs(client, messages, project,
+      return dm_v2_util.FetchResourcesAndOutputs(dm_base.GetClient(),
+                                                 dm_base.GetMessages(),
+                                                 dm_base.GetProject(),
                                                  args.deployment_name)
+
+
+@base.UnicodeIsSupported
+@base.ReleaseTracks(base.ReleaseTrack.BETA)
+class CreateBETA(Create):
+  """Create a deployment.
+
+  This command inserts (creates) a new deployment based on a provided config
+  file.
+  """
+
+  @staticmethod
+  def Args(parser):
+    Create.Args(parser, version=base.ReleaseTrack.BETA)
+
+
+@base.UnicodeIsSupported
+@base.ReleaseTracks(base.ReleaseTrack.ALPHA)
+class CreateALPHA(Create):
+  """Create a deployment.
+
+  This command inserts (creates) a new deployment based on a provided config
+  file.
+  """
+
+  @staticmethod
+  def Args(parser):
+    Create.Args(parser, version=base.ReleaseTrack.ALPHA)

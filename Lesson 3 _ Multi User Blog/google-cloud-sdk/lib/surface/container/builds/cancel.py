@@ -13,8 +13,8 @@
 # limitations under the License.
 """Cancel build command."""
 
+from googlecloudsdk.api_lib.cloudbuild import cloudbuild_util
 from googlecloudsdk.calliope import base
-from googlecloudsdk.core import apis as core_apis
 from googlecloudsdk.core import log
 
 
@@ -31,7 +31,9 @@ class Cancel(base.Command):
     """
     parser.add_argument(
         'build',
-        help='The build to cancel.',
+        help=('The build to cancel. The ID of the build is printed at the end '
+              'of the build submission process, or in the ID column when '
+              'listing builds.'),
     )
 
   def Run(self, args):
@@ -45,8 +47,8 @@ class Cancel(base.Command):
       Some value that we want to have printed later.
     """
 
-    client = core_apis.GetClientInstance('cloudbuild', 'v1')
-    messages = core_apis.GetMessagesModule('cloudbuild', 'v1')
+    client = cloudbuild_util.GetClientInstance()
+    messages = cloudbuild_util.GetMessagesModule()
     resources = self.context['registry']
 
     build_ref = resources.Parse(
@@ -55,5 +57,8 @@ class Cancel(base.Command):
         messages.CloudbuildProjectsBuildsCancelRequest(
             projectId=build_ref.projectId,
             id=build_ref.id))
-    log.status.write('Canceled [{r}].\n'.format(r=str(build_ref)))
+    log.status.write('Cancelled [{r}].\n'.format(r=str(build_ref)))
     return canceled_build
+
+  def Format(self, args):
+    return None

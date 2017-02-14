@@ -14,16 +14,42 @@
 
 """service-management enable command."""
 
-
-from googlecloudsdk.api_lib.service_management import base_classes
-from googlecloudsdk.api_lib.service_management import common_flags
 from googlecloudsdk.api_lib.service_management import enable_api
 from googlecloudsdk.api_lib.service_management import services_util
 from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.service_management import arg_parsers
+from googlecloudsdk.command_lib.service_management import common_flags
+from googlecloudsdk.core import properties
 
 
-class Enable(base.Command, base_classes.BaseServiceManagementCommand):
-  """Enables a service for a consumer project."""
+_DETAILED_HELP = {
+    'DESCRIPTION': """\
+        This command enables a service for consumption for a project.
+
+        To see a list of available services for a project, run:
+
+          $ {parent_command} list --available
+
+        More information on listing services can be found at:
+        https://cloud.google.com/service-management/list-services and on
+        enabling a service at:
+        https://cloud.google.com/service-management/enable-disable#enabling_services
+        """,
+    'EXAMPLES': """\
+        To enable a service called `my-consumed-service` on the current
+        project, run:
+
+          $ {command} my-consumed-service
+
+        To run the same command asynchronously (non-blocking), run:
+
+          $ {command} my-consumed-service --async
+        """,
+}
+
+
+class Enable(base.SilentCommand):
+  """Enables a service for consumption for a project."""
 
   @staticmethod
   def Args(parser):
@@ -34,7 +60,7 @@ class Enable(base.Command, base_classes.BaseServiceManagementCommand):
           on the command line after this command. Positional arguments are
           allowed.
     """
-    common_flags.service_flag(suffix='to enable').AddToParser(parser)
+    common_flags.available_service_flag(suffix='to enable').AddToParser(parser)
     base.ASYNC_FLAG.AddToParser(parser)
 
   def Run(self, args):
@@ -47,5 +73,10 @@ class Enable(base.Command, base_classes.BaseServiceManagementCommand):
     Returns:
       The response from the consumer settings API call.
     """
-    operation = enable_api.EnableServiceApiCall(self.project, args.service)
-    services_util.ProcessOperationResult(operation, args.async)
+    project = properties.VALUES.core.project.Get(required=True)
+    service = arg_parsers.GetServiceNameFromArg(args.service)
+    operation = enable_api.EnableServiceApiCall(project, service)
+    return services_util.ProcessOperationResult(operation, args.async)
+
+
+Enable.detailed_help = _DETAILED_HELP

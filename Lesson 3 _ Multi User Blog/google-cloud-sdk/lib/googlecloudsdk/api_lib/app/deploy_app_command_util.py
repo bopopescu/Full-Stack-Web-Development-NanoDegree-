@@ -21,12 +21,17 @@ import os
 import platform
 import shutil
 
+import enum
+
+from googlecloudsdk.api_lib.app import exceptions
+from googlecloudsdk.api_lib.app import metric_names
 from googlecloudsdk.api_lib.app import util
 from googlecloudsdk.api_lib.storage import storage_api
 from googlecloudsdk.api_lib.storage import storage_util
-from googlecloudsdk.calliope import exceptions
+from googlecloudsdk.command_lib.storage import storage_parallel
 from googlecloudsdk.core import exceptions as core_exceptions
 from googlecloudsdk.core import log
+from googlecloudsdk.core import metrics
 from googlecloudsdk.core import properties
 from googlecloudsdk.core.util import files as file_utils
 from googlecloudsdk.core.util import parallel
@@ -37,6 +42,9 @@ from googlecloudsdk.third_party.appengine.tools import context_util
 
 # Max App Engine file size; see https://cloud.google.com/appengine/docs/quotas
 _MAX_FILE_SIZE = 32 * 1024 * 1024
+
+
+_DEFAULT_NUM_THREADS = 8
 
 
 class LargeFileError(core_exceptions.Error):
@@ -61,22 +69,18 @@ class MultiError(core_exceptions.Error):
     self.errors = errors
 
 
-def _GetSha1(input_path):
-  return file_utils.Checksum().AddFileContents(input_path).HexDigest()
-
-
-def _BuildDeploymentManifest(info, bucket_ref, tmp_dir):
+def _BuildDeploymentManifest(info, source_dir, bucket_ref, tmp_dir):
   """Builds a deployment manifest for use with the App Engine Admin API.
 
   Args:
     info: An instance of yaml_parsing.ServiceInfo.
+    source_dir: str, path to the service's source directory
     bucket_ref: The reference to the bucket files will be placed in.
     tmp_dir: A temp directory for storing generated files (currently just source
         context files).
   Returns:
     A deployment manifest (dict) for use with the Admin API.
   """
-  source_dir = os.path.dirname(info.file)
   excluded_files_regex = info.parsed.skip_files.regex
   manifest = {}
   bucket_url = 'https://storage.googleapis.com/{0}'.format(bucket_ref.bucket)
@@ -84,7 +88,7 @@ def _BuildDeploymentManifest(info, bucket_ref, tmp_dir):
   # Normal application files.
   for rel_path in util.FileIterator(source_dir, excluded_files_regex):
     full_path = os.path.join(source_dir, rel_path)
-    sha1_hash = _GetSha1(full_path)
+    sha1_hash = file_utils.Checksum.HashSingleFile(full_path)
     manifest_path = '/'.join([bucket_url, sha1_hash])
     manifest[rel_path] = {
         'sourceUrl': manifest_path,
@@ -102,7 +106,7 @@ def _BuildDeploymentManifest(info, bucket_ref, tmp_dir):
       log.debug('Source context already exists. Using the existing file.')
       continue
     else:
-      sha1_hash = _GetSha1(context_file)
+      sha1_hash = file_utils.Checksum.HashSingleFile(context_file)
       manifest_path = '/'.join([bucket_url, sha1_hash])
       manifest[rel_path] = {
           'sourceUrl': manifest_path,
@@ -164,7 +168,7 @@ class FileUploadTask(object):
 
 
 def _UploadFile(file_upload_task):
-  """Upload a single file to Google Cloud Storage.
+  """Uploads a single file to Google Cloud Storage.
 
   Args:
     file_upload_task: FileUploadTask describing the file to upload
@@ -192,19 +196,60 @@ def _UploadFile(file_upload_task):
   return None
 
 
-def _UploadFiles(files_to_upload, bucket_ref):
-  """Upload files to App Engine Cloud Storeage bucket.
+class UploadStrategy(enum.Enum):
+  """The file upload parallelism strategy to use.
 
-  Uses the appropriate parallelism (multi-process, or no parallelism).
+  The old method of parallelism involved `num_file_upload_processes` (from the
+  App Engine properties) processes, with a special case for OS X Sierra.
+
+  The new method of parallelism involves `num_file_upload_threads` threads. It's
+  being tested in beta right now. Eventually, it will be become the default. It
+  should lead to fewer upload-related issues.
+
+  The old old method of parallelism involved shelling out to gsutil.
+  """
+  PROCESSES = 1
+  THREADS = 2
+  GSUTIL = 3
+
+
+def _UploadFilesThreads(files_to_upload, bucket_ref):
+  """Uploads files to App Engine Cloud Storage bucket using threads.
 
   Args:
-    files_to_upload: list of FileUploadTask
-    bucket_ref: The reference to the bucket files will be placed in.
+    files_to_upload: dict {str: str}, map of checksum to local path
+    bucket_ref: storage_api.BucketReference, the reference to the bucket files
+      will be placed in.
+
+  Raises:
+    MultiError: if one or more errors occurred during file upload.
+  """
+  threads_per_proc = (properties.VALUES.app.num_file_upload_threads.GetInt() or
+                      storage_parallel.DEFAULT_NUM_THREADS)
+  tasks = []
+  # Have to sort files because the test framework requires a known order for
+  # mocked API calls.
+  for sha1_hash, path in sorted(files_to_upload.iteritems()):
+    task = storage_parallel.FileUploadTask(path, bucket_ref.ToBucketUrl(),
+                                           sha1_hash)
+    tasks.append(task)
+  storage_parallel.UploadFiles(tasks, threads_per_process=threads_per_proc)
+
+
+def _UploadFilesProcesses(files_to_upload, bucket_ref):
+  """Uploads files to App Engine Cloud Storage bucket using processes.
+
+  Args:
+    files_to_upload: dict {str: str}, map of checksum to local path
+    bucket_ref: storage_api.BucketReference, the reference to the bucket files
+      will be placed in.
 
   Raises:
     MultiError: if one or more errors occurred during file upload.
   """
   tasks = []
+  # Have to sort files because the test framework requires a known order for
+  # mocked API calls.
   for sha1_hash, path in sorted(files_to_upload.iteritems()):
     tasks.append(FileUploadTask(sha1_hash, path, bucket_ref.ToBucketUrl()))
 
@@ -222,6 +267,7 @@ def _UploadFiles(files_to_upload, bucket_ref):
     # requested and just use threads.
     # This is slightly confusing, but when we resolve the TODO in the below
     # branch of the if statement, this should get fixed.
+    threads_per_proc = threads_per_proc or _DEFAULT_NUM_THREADS
     with parallel.GetPool(1, threads_per_proc) as pool:
       results = pool.Map(_UploadFile, tasks)
   elif num_procs > 1:
@@ -240,8 +286,12 @@ def _UploadFiles(files_to_upload, bucket_ref):
         raise MultiError('during file upload', [error])
 
 
-def CopyFilesToCodeBucketNoGsUtil(service, bucket_ref):
-  """Copies application files to the code bucket without calling gsutil.
+def CopyFilesToCodeBucket(service, source_dir, bucket_ref,
+                          upload_strategy):
+  """Copies application files to the Google Cloud Storage code bucket.
+
+  Uses either gsutil, the Cloud Storage API using processes, or the Cloud
+  Storage API using threads.
 
   Consider the following original structure:
     app/
@@ -272,30 +322,45 @@ def CopyFilesToCodeBucketNoGsUtil(service, bucket_ref):
 
   Args:
     service: ServiceYamlInfo, The service being deployed.
-    bucket_ref: The bucket reference to upload to.
+    source_dir: str, path to the service's source directory
+    bucket_ref: The reference to the bucket files will be placed in.
+    upload_strategy: The UploadStrategy to use
 
   Returns:
     A dictionary representing the manifest.
-  """
 
-  # Collect a list of files to upload, indexed by the SHA so uploads are
-  # deduplicated.
-  with file_utils.TemporaryDirectory() as tmp_dir:
-    manifest = _BuildDeploymentManifest(service, bucket_ref, tmp_dir)
-    source_dir = os.path.dirname(service.file)
-    files_to_upload = _BuildFileUploadMap(
-        manifest, source_dir, bucket_ref, tmp_dir)
-    _UploadFiles(files_to_upload, bucket_ref)
-  log.status.Print('File upload done.')
-  log.info('Manifest: [{0}]'.format(manifest))
+  Raises:
+    ValueError: if an invalid upload strategy or None is given
+  """
+  if upload_strategy is UploadStrategy.GSUTIL:
+    manifest = CopyFilesToCodeBucketGsutil(service, source_dir, bucket_ref)
+    metrics.CustomTimedEvent(metric_names.COPY_APP_FILES)
+  else:
+    # Collect a list of files to upload, indexed by the SHA so uploads are
+    # deduplicated.
+    with file_utils.TemporaryDirectory() as tmp_dir:
+      manifest = _BuildDeploymentManifest(service, source_dir, bucket_ref,
+                                          tmp_dir)
+      files_to_upload = _BuildFileUploadMap(
+          manifest, source_dir, bucket_ref, tmp_dir)
+      if upload_strategy is UploadStrategy.THREADS:
+        _UploadFilesThreads(files_to_upload, bucket_ref)
+      elif upload_strategy is UploadStrategy.PROCESSES:
+        _UploadFilesProcesses(files_to_upload, bucket_ref)
+      else:
+        raise ValueError('Invalid upload strategy ' + str(upload_strategy))
+    log.status.Print('File upload done.')
+    log.info('Manifest: [{0}]'.format(manifest))
+    metrics.CustomTimedEvent(metric_names.COPY_APP_FILES)
   return manifest
 
 
-def CopyFilesToCodeBucket(service, bucket_ref):
+def CopyFilesToCodeBucketGsutil(service, source_dir, bucket_ref):
   """Examines services and copies files to a Google Cloud Storage bucket.
 
   Args:
     service: ServiceYamlInfo, The parsed service information.
+    source_dir: str, path to the service's source directory
     bucket_ref: str A reference to a GCS bucket where the files will be
       uploaded.
 
@@ -303,9 +368,8 @@ def CopyFilesToCodeBucket(service, bucket_ref):
     A dictionary representing the manifest. See _BuildStagingDirectory.
   """
   with file_utils.TemporaryDirectory() as staging_directory:
-    source_directory = os.path.dirname(service.file)
     excluded_files_regex = service.parsed.skip_files.regex
-    manifest = _BuildStagingDirectory(source_directory,
+    manifest = _BuildStagingDirectory(source_dir,
                                       staging_directory,
                                       bucket_ref,
                                       excluded_files_regex)
@@ -333,7 +397,7 @@ def CopyFilesToCodeBucket(service, bucket_ref):
               (staging_directory, dest_dir),
               should_retry_if=_ShouldRetry)
         except retry.RetryException as e:
-          raise exceptions.ToolException(
+          raise exceptions.StorageError(
               ('Could not synchronize files. The gsutil command exited with '
                'status [{s}]. Command output is available in [{l}].').format(
                    s=e.last_result, l=log.GetLogFilePath()))
@@ -394,7 +458,7 @@ def _BuildStagingDirectory(source_dir, staging_dir, bucket_ref,
     A dictionary which represents the file manifest.
   """
   manifest = {}
-  bucket_url = bucket_ref.ToAppEngineApiReference()
+  bucket_url = bucket_ref.GetPublicUrl()
 
   def AddFileToManifest(manifest_path, input_path):
     """Adds the given file to the current manifest.
@@ -429,13 +493,6 @@ def _BuildStagingDirectory(source_dir, staging_dir, bucket_ref,
     if size > _MAX_FILE_SIZE:
       raise LargeFileError(local_path, size, _MAX_FILE_SIZE)
     target_path = AddFileToManifest(relative_path, local_path)
-    # target_path should not be None because FileIterator should never visit the
-    # same file twice and if it did, the file would be identical and we'd get a
-    # non-None return.
-    if not target_path:
-      raise exceptions.InternalError(
-          'Attempted multiple uploads of {0} with varying contents.'.format(
-              local_path))
     if not os.path.exists(target_path):
       _CopyOrSymlink(local_path, target_path)
 

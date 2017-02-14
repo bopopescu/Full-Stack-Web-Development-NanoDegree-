@@ -26,12 +26,17 @@ class Collections(enum.Enum):
       'projects.jobs',
       'projects/{projectId}/jobs/{jobId}',
       {},
-      [u'projectId', u'jobId'],
-      'DataflowProjectsJobsGetRequest',)
+      [u'projectId', u'jobId']
+  )
+  PROJECTS_LOCATIONS_JOBS = (
+      'projects.locations.jobs',
+      'projects/{projectId}/locations/{location}/jobs/{jobId}',
+      {},
+      [u'projectId', u'location', u'jobId']
+  )
 
-  def __init__(self, collection_name, path, flat_paths, params, request_type):
+  def __init__(self, collection_name, path, flat_paths, params):
     self.collection_name = collection_name
     self.path = path
     self.flat_paths = flat_paths
     self.params = params
-    self.request_type = request_type

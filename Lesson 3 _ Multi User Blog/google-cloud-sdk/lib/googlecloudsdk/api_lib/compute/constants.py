@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Defines tool-wide constants."""
-import os
+import collections
 
-from googlecloudsdk.third_party.py27 import py27_collections as collections
 
 BYTES_IN_ONE_MB = 2 ** 20
 BYTES_IN_ONE_GB = 2 ** 30
@@ -33,6 +32,7 @@ DEFAULT_ACCESS_CONFIG_NAME = 'external-nat'
 
 DEFAULT_MACHINE_TYPE = 'n1-standard-1'
 DEFAULT_NETWORK = 'default'
+DEFAULT_NETWORK_INTERFACE = 'nic0'
 
 DEFAULT_IMAGE_FAMILY = 'debian-8'
 
@@ -56,14 +56,14 @@ IMAGE_ALIASES = {
         project='coreos-cloud',
         name_prefix='coreos-stable',
         family='coreos-stable'),
+    'cos': ImageAlias(
+        project='cos-cloud',
+        name_prefix='cos',
+        family='cos'),
     'debian-8': ImageAlias(
         project='debian-cloud',
         name_prefix='debian-8-jessie',
         family='debian-8'),
-    'opensuse-13': ImageAlias(
-        project='opensuse-cloud',
-        name_prefix='opensuse-13',
-        family=None),
     'rhel-6': ImageAlias(
         project='rhel-cloud',
         name_prefix='rhel-6',
@@ -88,14 +88,6 @@ IMAGE_ALIASES = {
         project='ubuntu-os-cloud',
         name_prefix='ubuntu-1404-trusty',
         family='ubuntu-1404-lts'),
-    'ubuntu-15-04': ImageAlias(
-        project='ubuntu-os-cloud',
-        name_prefix='ubuntu-1504-vivid',
-        family=None),
-    'ubuntu-15-10': ImageAlias(
-        project='ubuntu-os-cloud',
-        name_prefix='ubuntu-1510-wily',
-        family='ubuntu-1510'),
     'windows-2008-r2': ImageAlias(
         project='windows-cloud',
         name_prefix='windows-server-2008-r2',
@@ -112,6 +104,10 @@ HIDDEN_IMAGE_ALIASES = {
         project='goog-vmruntime-images',
         name_prefix='gae-builder-vm',
         family=None),
+    'opensuse-13': ImageAlias(
+        project='opensuse-cloud',
+        name_prefix='opensuse-13',
+        family=None),
 }
 
 WINDOWS_IMAGE_PROJECTS = [
@@ -122,7 +118,7 @@ PUBLIC_IMAGE_PROJECTS = [
     'centos-cloud',
     'coreos-cloud',
     'debian-cloud',
-    'opensuse-cloud',
+    'cos-cloud',
     'rhel-cloud',
     'suse-cloud',
     'ubuntu-os-cloud',
@@ -130,14 +126,10 @@ PUBLIC_IMAGE_PROJECTS = [
 PREVIEW_IMAGE_PROJECTS = []
 
 # SSH-related constants.
-DEFAULT_SSH_KEY_FILE = os.path.join('~', '.ssh', 'google_compute_engine')
 SSH_KEYS_METADATA_KEY = 'sshKeys'
 SSH_KEYS_INSTANCE_RESTRICTED_METADATA_KEY = 'ssh-keys'
 SSH_KEYS_BLOCK_METADATA_KEY = 'block-project-ssh-keys'
 MAX_METADATA_VALUE_SIZE_IN_BYTES = 32768
-PER_USER_SSH_CONFIG_FILE = os.path.join('~', '.ssh', 'config')
-GOOGLE_SSH_KNOWN_HOSTS_FILE = os.path.join('~', '.ssh',
-                                           'google_compute_known_hosts')
 
 _STORAGE_RO = 'https://www.googleapis.com/auth/devstorage.read_only'
 _USERACCOUNTS_RO = 'https://www.googleapis.com/auth/cloud.useraccounts.readonly'
@@ -146,32 +138,50 @@ _MONITORING_WRITE = 'https://www.googleapis.com/auth/monitoring.write'
 _SERVICE_CONTROL_SCOPE = 'https://www.googleapis.com/auth/servicecontrol'
 _SERVICE_MANAGEMENT_SCOPE = 'https://www.googleapis.com/auth/service.management.readonly'
 _SOURCE_REPOS = 'https://www.googleapis.com/auth/source.full_control'
+_SOURCE_REPOS_RO = 'https://www.googleapis.com/auth/source.read_only'
 
 DEFAULT_SCOPES = sorted([
     _STORAGE_RO, _USERACCOUNTS_RO, _LOGGING_WRITE, _MONITORING_WRITE,
-    _SERVICE_CONTROL_SCOPE, _SERVICE_MANAGEMENT_SCOPE, _SOURCE_REPOS,
+    _SERVICE_CONTROL_SCOPE, _SERVICE_MANAGEMENT_SCOPE,
 ])
 
 SCOPES = {
-    'bigquery': 'https://www.googleapis.com/auth/bigquery',
-    'cloud-platform': 'https://www.googleapis.com/auth/cloud-platform',
-    'cloud-source-repos': _SOURCE_REPOS,
-    'compute-ro': 'https://www.googleapis.com/auth/compute.readonly',
-    'compute-rw': 'https://www.googleapis.com/auth/compute',
-    'useraccounts-ro': _USERACCOUNTS_RO,
-    'useraccounts-rw': 'https://www.googleapis.com/auth/cloud.useraccounts',
-    'datastore': 'https://www.googleapis.com/auth/datastore',
-    'logging-write': _LOGGING_WRITE,
-    'monitoring': 'https://www.googleapis.com/auth/monitoring',
-    'monitoring-write': _MONITORING_WRITE,
-    'service-control': _SERVICE_CONTROL_SCOPE,
-    'service-management': _SERVICE_MANAGEMENT_SCOPE,
-    'sql': 'https://www.googleapis.com/auth/sqlservice',
-    'sql-admin': 'https://www.googleapis.com/auth/sqlservice.admin',
-    'storage-full': 'https://www.googleapis.com/auth/devstorage.full_control',
-    'storage-ro': _STORAGE_RO,
-    'storage-rw': 'https://www.googleapis.com/auth/devstorage.read_write',
-    'taskqueue': 'https://www.googleapis.com/auth/taskqueue',
-    'userinfo-email': 'https://www.googleapis.com/auth/userinfo.email',
+    'bigquery': ['https://www.googleapis.com/auth/bigquery'],
+    'cloud-platform': ['https://www.googleapis.com/auth/cloud-platform'],
+    'cloud-source-repos': [_SOURCE_REPOS],
+    'cloud-source-repos-ro': [_SOURCE_REPOS_RO],
+    'compute-ro': ['https://www.googleapis.com/auth/compute.readonly'],
+    'compute-rw': ['https://www.googleapis.com/auth/compute'],
+    'default': DEFAULT_SCOPES,
+    'useraccounts-ro': [_USERACCOUNTS_RO],
+    'useraccounts-rw': ['https://www.googleapis.com/auth/cloud.useraccounts'],
+    'datastore': ['https://www.googleapis.com/auth/datastore'],
+    'logging-write': [_LOGGING_WRITE],
+    'monitoring': ['https://www.googleapis.com/auth/monitoring'],
+    'monitoring-write': [_MONITORING_WRITE],
+    'service-control': [_SERVICE_CONTROL_SCOPE],
+    'service-management': [_SERVICE_MANAGEMENT_SCOPE],
+    'sql': ['https://www.googleapis.com/auth/sqlservice'],
+    'sql-admin': ['https://www.googleapis.com/auth/sqlservice.admin'],
+    'storage-full': ['https://www.googleapis.com/auth/devstorage.full_control'],
+    'storage-ro': [_STORAGE_RO],
+    'storage-rw': ['https://www.googleapis.com/auth/devstorage.read_write'],
+    'taskqueue': ['https://www.googleapis.com/auth/taskqueue'],
+    'userinfo-email': ['https://www.googleapis.com/auth/userinfo.email'],
 }
 
+
+def ScopesForHelp():
+  """Get describing aliases, for use in command help.
+
+  Returns:
+  str, containing a line for each scope with name of the scope alias
+  followed by comma and full url of the scope, and (if the alias expands to more
+  than one scope) more lines containing comma and one scope url each.
+  """
+  aliases = []
+  for alias, value in sorted(SCOPES.iteritems()):
+    aliases.append('{0},{1}'.format(alias, value[0]))
+    for item in value[1:]:
+      aliases.append(',' + item)
+  return '\n'.join(aliases)

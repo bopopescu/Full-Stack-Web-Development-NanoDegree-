@@ -42,15 +42,5 @@ class Logging(base.Group):
         api='logging', collection=None, param='projectsId',
         resolver=resolvers.FromProperty(properties.VALUES.core.project))
 
-    context['logging_client_v1beta3'] = apis.GetClientInstance(
-        'logging', 'v1beta3')
-    context['logging_messages_v1beta3'] = apis.GetMessagesModule(
-        'logging', 'v1beta3')
-
-    context['logging_client_v2beta1'] = apis.GetClientInstance(
-        'logging', 'v2beta1')
-    context['logging_messages_v2beta1'] = apis.GetMessagesModule(
-        'logging', 'v2beta1')
-
     context['logging_resources'] = resources.REGISTRY
     return context

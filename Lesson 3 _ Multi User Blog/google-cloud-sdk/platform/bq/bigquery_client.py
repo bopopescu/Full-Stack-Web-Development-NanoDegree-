@@ -525,6 +525,7 @@ class BigqueryClient(object):
     if self.dataset_id and not self.project_id:
       raise ValueError('Cannot set dataset_id without project_id')
 
+
   def GetHttp(self):
     """Returns the httplib2 Http to use."""
     http = httplib2.Http()
@@ -558,8 +559,9 @@ class BigqueryClient(object):
       iterations = 0
       while iterations < max_retries and discovery_document is None:
         try:
-          _, discovery_document = http.request(self.GetDiscoveryUrl().format(
-              api='bigquery', apiVersion=self.api_version))
+          discovery_url = self.GetDiscoveryUrl().format(
+              api='bigquery', apiVersion=self.api_version)
+          _, discovery_document = http.request(discovery_url)
         except (httplib2.HttpLib2Error, apiclient.errors.HttpError), e:
           # We can't find the specified server. This can be thrown for
           # multiple reasons, so inspect the error.
@@ -603,6 +605,7 @@ class BigqueryClient(object):
     """Return the apiclient that supports insert operation."""
     insert_client = self.apiclient
     return insert_client
+
 
 
   #################################
@@ -894,7 +897,9 @@ class BigqueryClient(object):
         **table_dict)
     return op.execute()
 
-  def ReadSchemaAndRows(self, table_dict, start_row=None, max_rows=None):
+
+  def ReadSchemaAndRows(self, table_dict, start_row=None, max_rows=None
+                       ):
     """Convenience method to get the schema and rows from a table.
 
     Arguments:
@@ -918,7 +923,8 @@ class BigqueryClient(object):
     table_reader = _TableTableReader(self.apiclient,
                                      self.max_rows_per_request,
                                      table_ref)
-    return table_reader.ReadSchemaAndRows(start_row, max_rows)
+    return table_reader.ReadSchemaAndRows(start_row, max_rows,
+                                         )
 
   def ReadSchemaAndJobRows(self, job_dict, start_row=None, max_rows=None):
     """Convenience method to get the schema and rows from job query result.
@@ -971,6 +977,7 @@ class BigqueryClient(object):
         formatter.AddColumns(('Bytes Processed',))
         formatter.AddColumns(('Bytes Billed',))
         formatter.AddColumns(('Billing Tier',))
+        formatter.AddColumns(('Labels',))
     elif reference_type == ApiClientHelper.ProjectReference:
       if print_format == 'list':
         formatter.AddColumns(('projectId',))
@@ -1194,6 +1201,9 @@ class BigqueryClient(object):
       result['Bytes Billed'] = query_stats['totalBytesBilled']
     if 'billingTier' in query_stats:
       result['Billing Tier'] = query_stats['billingTier']
+    config = result.get('configuration', {})
+    if 'labels' in config:
+      result['Labels'] = _FormatLabels(config['labels'])
     return result
 
   @staticmethod
@@ -1260,7 +1270,7 @@ class BigqueryClient(object):
           int(result['expirationTime']) / 1000)
     if 'type' in result:
       result['Type'] = result['type']
-      if 'view' in result:
+      if 'view' in result and 'query' in result['view']:
         result['Query'] = result['view']['query']
       if result['type'] == 'EXTERNAL':
         if 'externalDataConfiguration' in result:
@@ -1639,31 +1649,42 @@ class BigqueryClient(object):
     """
     _Typecheck(reference, ApiClientHelper.TableReference, method='UpdateTable')
 
-    body = BigqueryClient.ConstructObjectInfo(reference)
+    # Get the existing table and associated ETag.
+    table = self.apiclient.tables().get(**dict(reference)).execute()
     if schema:
-      body['schema'] = {'fields': schema}
+      table['schema'] = {'fields': schema}
     if friendly_name is not None:
-      body['friendlyName'] = friendly_name
+      table['friendlyName'] = friendly_name
     if description is not None:
-      body['description'] = description
+      table['description'] = description
     if expiration is not None:
       if expiration == 0:
-        body['expirationTime'] = None
+        table['expirationTime'] = None
       else:
-        body['expirationTime'] = expiration
+        table['expirationTime'] = expiration
     if view_query is not None:
       view_args = {'query': view_query}
       if view_udf_resources is not None:
         view_args['userDefinedFunctionResources'] = view_udf_resources
-      body['view'] = view_args
+      table['view'] = view_args
       if use_legacy_sql is not None:
         view_args['useLegacySql'] = use_legacy_sql
     if external_data_config is not None:
-      body['externalDataConfiguration'] = external_data_config
+      table['externalDataConfiguration'] = external_data_config
     if time_partitioning is not None:
-      body['timePartitioning'] = time_partitioning
+      table['timePartitioning'] = time_partitioning
 
-    self.apiclient.tables().patch(body=body, **dict(reference)).execute()
+    request = self.apiclient.tables().update(body=table, **dict(reference))
+
+    # Perform a conditional update to protect against concurrent
+    # modifications to this table.  By placing the ETag returned in
+    # the get operation into the If-Match header, the API server will
+    # make sure the table hasn't changed.  If there is a conflicting
+    # change, this update will fail with a "Precondition failed"
+    # error.
+    if table['etag'] is not None:
+      request.headers['If-Match'] = table['etag']
+    request.execute()
 
   def UpdateDataset(self,
                     reference,
@@ -2319,25 +2340,28 @@ class BigqueryClient(object):
         # Temporary server errors while waiting on a job are okay.
         logging.warning('Transient error during query: %s', e)
 
-  def Query(self, query,
-            destination_table=None,
-            create_disposition=None,
-            write_disposition=None,
-            priority=None,
-            preserve_nulls=None,
-            allow_large_results=None,
-            dry_run=None,
-            use_cache=None,
-            min_completion_ratio=None,
-            flatten_results=None,
-            external_table_definitions_json=None,
-            udf_resources=None,
-            maximum_billing_tier=None,
-            maximum_bytes_billed=None,
-            use_legacy_sql=None,
-            schema_update_options=None,
-            query_parameters=None,
-            **kwds):
+  def Query(
+      self,
+      query,
+      destination_table=None,
+      create_disposition=None,
+      write_disposition=None,
+      priority=None,
+      preserve_nulls=None,
+      allow_large_results=None,
+      dry_run=None,
+      use_cache=None,
+      min_completion_ratio=None,
+      flatten_results=None,
+      external_table_definitions_json=None,
+      udf_resources=None,
+      maximum_billing_tier=None,
+      maximum_bytes_billed=None,
+      use_legacy_sql=None,
+      schema_update_options=None,
+      labels=None,
+      query_parameters=None,
+      **kwds):
     # pylint: disable=g-doc-args
     """Execute the given query, returning the created job.
 
@@ -2377,6 +2401,7 @@ class BigqueryClient(object):
           is true.
       schema_update_options: schema update options when appending to the
           destination table or truncating a table partition.
+      labels: an optional dict of labels to set on the query job.
       query_parameters: parameter values for use_legacy_sql=False queries.
       **kwds: Passed on to self.ExecuteJob.
 
@@ -2418,28 +2443,31 @@ class BigqueryClient(object):
         query_parameters=query_parameters,
         min_completion_ratio=min_completion_ratio)
     request = {'query': query_config}
-    _ApplyParameters(request, dry_run=dry_run)
+    _ApplyParameters(request, dry_run=dry_run,
+                     labels=labels)
     return self.ExecuteJob(request, **kwds)
 
-  def Load(self,
-           destination_table_reference,
-           source,
-           schema=None,
-           create_disposition=None,
-           write_disposition=None,
-           field_delimiter=None,
-           skip_leading_rows=None,
-           encoding=None,
-           quote=None,
-           max_bad_records=None,
-           allow_quoted_newlines=None,
-           source_format=None,
-           allow_jagged_rows=None,
-           ignore_unknown_values=None,
-           projection_fields=None,
-           autodetect=None,
-           schema_update_options=None,
-           **kwds):
+  def Load(
+      self,
+      destination_table_reference,
+      source,
+      schema=None,
+      create_disposition=None,
+      write_disposition=None,
+      field_delimiter=None,
+      skip_leading_rows=None,
+      encoding=None,
+      quote=None,
+      max_bad_records=None,
+      allow_quoted_newlines=None,
+      source_format=None,
+      allow_jagged_rows=None,
+      ignore_unknown_values=None,
+      projection_fields=None,
+      autodetect=None,
+      schema_update_options=None,
+      null_marker=None,
+      **kwds):
     """Load the given data into BigQuery.
 
     The job will execute synchronously if sync=True is provided as an
@@ -2477,6 +2505,7 @@ class BigqueryClient(object):
           and options of the source files if they are CSV or JSON formats.
       schema_update_options: schema update options when appending to the
           destination table or truncating a table partition.
+      null_marker: Optional. String that will be interpreted as a NULL value.
       **kwds: Passed on to self.ExecuteJob.
 
     Returns:
@@ -2507,6 +2536,7 @@ class BigqueryClient(object):
         ignore_unknown_values=ignore_unknown_values,
         projection_fields=projection_fields,
         schema_update_options=schema_update_options,
+        null_marker=null_marker,
         autodetect=autodetect)
     return self.ExecuteJob(configuration={'load': load_config},
                            upload_file=upload_file, **kwds)
@@ -2559,8 +2589,9 @@ class _TableReader(object):
   _TableReaders provide a way to read paginated rows and schemas from a table.
   """
 
-  def ReadRows(self, start_row=0, max_rows=None):
-    """Read ad most max_rows rows from a table.
+  def ReadRows(self, start_row=0, max_rows=None
+              ):
+    """Read at most max_rows rows from a table.
 
     Args:
       start_row: first row to return.
@@ -2572,10 +2603,12 @@ class _TableReader(object):
     Returns:
       list of rows, each of which is a list of field values.
     """
-    (_, rows) = self.ReadSchemaAndRows(start_row=start_row, max_rows=max_rows)
+    (_, rows) = self.ReadSchemaAndRows(start_row=start_row, max_rows=max_rows,
+                                      )
     return rows
 
-  def ReadSchemaAndRows(self, start_row, max_rows):
+  def ReadSchemaAndRows(self, start_row, max_rows
+                       ):
     """Read at most max_rows rows from a table and the schema.
 
     Args:
@@ -2605,7 +2638,8 @@ class _TableReader(object):
       (more_rows, page_token, current_schema) = self._ReadOnePage(
           None if page_token else start_row,
           max_rows=None if page_token else rows_to_read,
-          page_token=page_token)
+          page_token=page_token
+      )
       if not schema and current_schema:
         schema = current_schema.get('fields', [])
       for row in more_rows:
@@ -2650,7 +2684,8 @@ class _TableReader(object):
     """Returns context for what is being read."""
     raise NotImplementedError('Subclass must implement GetPrintContext')
 
-  def _ReadOnePage(self, start_row, max_rows, page_token=None):
+  def _ReadOnePage(self, start_row, max_rows, page_token=None
+                  ):
     """Read one page of data, up to max_rows rows.
 
     Assumes that the table is ready for reading. Will signal an error otherwise.
@@ -2681,13 +2716,15 @@ class _TableTableReader(_TableReader):
   def _GetPrintContext(self):
     return '%r' % (self.table_ref,)
 
-  def _ReadOnePage(self, start_row, max_rows, page_token=None):
+  def _ReadOnePage(self, start_row, max_rows, page_token=None
+                  ):
     kwds = dict(self.table_ref)
     kwds['maxResults'] = max_rows
     if page_token:
       kwds['pageToken'] = page_token
     else:
       kwds['startIndex'] = start_row
+    data = None
     if data is None:
       data = self._apiclient.tabledata().list(**kwds).execute()
     page_token = data.get('pageToken', None)
@@ -2711,7 +2748,8 @@ class _JobTableReader(_TableReader):
   def _GetPrintContext(self):
     return '%r' % (self.job_ref,)
 
-  def _ReadOnePage(self, start_row, max_rows, page_token=None):
+  def _ReadOnePage(self, start_row, max_rows, page_token=None
+                  ):
     kwds = dict(self.job_ref)
     kwds['maxResults'] = max_rows
     # Sets the timeout to 0 because we assume the table is already ready.

@@ -16,9 +16,15 @@
 from googlecloudsdk.api_lib.ml import jobs
 from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.ml import flags
+from googlecloudsdk.core import properties
+from googlecloudsdk.core import resources
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
+_TF_RECORD_URL = ('https://www.tensorflow.org/versions/r0.12/how_tos/'
+                  'reading_data/index.html#file-formats')
+
+
 class Prediction(base.Command):
   """Start a Cloud ML batch prediction job."""
 
@@ -28,23 +34,48 @@ class Prediction(base.Command):
     # TODO(user): move all flags definition to api_lib/ml/flags.py.
     parser.add_argument('job', help='Name of the batch prediction job.')
     parser.add_argument('--model', required=True, help='Name of the model.')
-    parser.add_argument(
+    version = parser.add_argument(
         '--version',
-        help='Model version to be used. If unspecified, the default version '
-        'of the model will be used.')
+        help='Model version to be used.')
+    version.detailed_help = """\
+Model version to be used.
+
+If unspecified, the default version of the model will be used. To list model
+versions run
+
+  $ gcloud beta ml versions list
+"""
     # input location is a repeated field.
-    parser.add_argument(
+    input_paths = parser.add_argument(
         '--input-paths',
         type=arg_parsers.ArgList(min_length=1),
         required=True,
-        help='Google Cloud Storage paths to the instances to run prediction on.'
-        ' Wildcards accepted. Multiple paths can be specified if more than one '
-        'file patterns are needed. Example: '
-        'gs://my-bucket-0/instances0,gs://my-bucket-1/instances1')
+        help='Google Cloud Storage paths for instances to run prediction on.')
+    input_paths.detailed_help = """\
+Google Cloud Storage paths to the instances to run prediction on.
+
+Wildcards (```*```) accepted at the *end* of a path. More than one path can be
+specified if multiple file patterns are needed. For example,
+
+    gs://my-bucket/instances*,gs://my-bucket/other-instances1
+
+will match any objects whose names start with `instances` in `my-bucket` as well
+as the `other-instances1` bucket, while
+
+    gs://my-bucket/instance-dir/*
+
+will match any objects in the `instance-dir` "directory" (since directories
+aren't a first-class Cloud Storage concept) of `my-bucket`.
+"""
     parser.add_argument(
         '--data-format',
         required=True,
-        choices=['TEXT', 'TF_RECORD'],
+        choices={
+            'TEXT': ('Text files with instances separated by the new-line '
+                     'character.'),
+            'TF_RECORD': 'TFRecord files; see {}'.format(_TF_RECORD_URL),
+            'TF_RECORD_GZIP': 'GZIP-compressed TFRecord files.'
+        },
         help='Data format of the input files.')
     parser.add_argument(
         '--output-path', required=True,
@@ -54,6 +85,7 @@ class Prediction(base.Command):
         '--region',
         required=True,
         help='The Google Compute Engine region to run the job in.')
+    flags.RUNTIME_VERSION.AddToParser(parser)
 
   def Run(self, args):
     """This is what gets called when the user runs this command.
@@ -65,6 +97,9 @@ class Prediction(base.Command):
     Returns:
       Some value that we want to have printed later.
     """
+    project_ref = resources.REGISTRY.Parse(
+        properties.VALUES.core.project.Get(required=True),
+        collection='ml.projects')
     job = jobs.BuildBatchPredictionJob(
         job_name=args.job,
         model_name=args.model,
@@ -72,5 +107,6 @@ class Prediction(base.Command):
         input_paths=args.input_paths,
         data_format=args.data_format,
         output_path=args.output_path,
-        region=args.region)
-    return jobs.Create(job)
+        region=args.region,
+        runtime_version=args.runtime_version)
+    return jobs.JobsClient().Create(project_ref, job)

@@ -24,22 +24,25 @@ from googlecloudsdk.command_lib.compute.instance_templates import flags as insta
 from googlecloudsdk.command_lib.compute.instances import flags as instances_flags
 
 
-def _CommonArgs(parser, multiple_network_interface_cards, release_track):
+def _CommonArgs(parser, multiple_network_interface_cards, release_track,
+                support_alias_ip_ranges):
   """Common arguments used in Alpha, Beta, and GA."""
   metadata_utils.AddMetadataArgs(parser)
   instances_flags.AddDiskArgs(parser)
   if release_track in [base.ReleaseTrack.ALPHA]:
     instances_flags.AddCreateDiskArgs(parser)
+    instances_flags.AddExtendedMachineTypeArgs(parser)
   instances_flags.AddLocalSsdArgs(parser)
   instances_flags.AddCanIpForwardArgs(parser)
   instances_flags.AddAddressArgs(
       parser, instances=False,
-      multiple_network_interface_cards=multiple_network_interface_cards)
+      multiple_network_interface_cards=multiple_network_interface_cards,
+      support_alias_ip_ranges=support_alias_ip_ranges)
   instances_flags.AddMachineTypeArgs(parser)
   instances_flags.AddMaintenancePolicyArgs(parser)
   instances_flags.AddNoRestartOnFailureArgs(parser)
   instances_flags.AddPreemptibleVmArgs(parser)
-  instances_flags.AddScopeArgs(parser)
+  instances_flags.AddServiceAccountAndScopeArgs(parser, False)
   instances_flags.AddTagsArgs(parser)
   instances_flags.AddCustomMachineTypeArgs(parser)
   instances_flags.AddImageArgs(parser)
@@ -47,8 +50,8 @@ def _CommonArgs(parser, multiple_network_interface_cards, release_track):
 
   flags.AddRegionFlag(
       parser,
-      resource_type='instance template',
-      operation_type='create')
+      resource_type='subnetwork',
+      operation_type='attach')
 
   parser.add_argument(
       '--description',
@@ -58,7 +61,7 @@ def _CommonArgs(parser, multiple_network_interface_cards, release_track):
 
 
 @base.ReleaseTracks(base.ReleaseTrack.GA)
-class Create(base_classes.BaseAsyncCreator, image_utils.ImageExpander):
+class Create(base_classes.BaseAsyncCreator):
   """Create a Compute Engine virtual machine instance template.
 
   *{command}* facilitates the creation of Google Compute Engine
@@ -75,7 +78,8 @@ class Create(base_classes.BaseAsyncCreator, image_utils.ImageExpander):
   @staticmethod
   def Args(parser):
     _CommonArgs(parser, multiple_network_interface_cards=False,
-                release_track=base.ReleaseTrack.GA)
+                release_track=base.ReleaseTrack.GA,
+                support_alias_ip_ranges=False)
 
   @property
   def service(self):
@@ -93,6 +97,7 @@ class Create(base_classes.BaseAsyncCreator, image_utils.ImageExpander):
     """Validates the values of all disk-related flags."""
     instances_flags.ValidateDiskCommonFlags(args)
     instances_flags.ValidateDiskBootFlags(args)
+    instances_flags.ValidateCreateDiskFlags(args)
 
   def CreateRequests(self, args):
     """Creates and returns an InstanceTemplates.Insert request.
@@ -106,6 +111,7 @@ class Create(base_classes.BaseAsyncCreator, image_utils.ImageExpander):
     self.ValidateDiskFlags(args)
     instances_flags.ValidateLocalSsdFlags(args)
     instances_flags.ValidateNicFlags(args)
+    instances_flags.ValidateServiceAccountAndScopeArgs(args)
 
     boot_disk_size_gb = utils.BytesToGb(args.boot_disk_size)
     utils.WarnIfDiskSizeIsTooSmall(boot_disk_size_gb, args.boot_disk_type)
@@ -122,14 +128,18 @@ class Create(base_classes.BaseAsyncCreator, image_utils.ImageExpander):
     if hasattr(args, 'network_interface') and args.network_interface:
       network_interfaces = (
           instance_template_utils.CreateNetworkInterfaceMessages)(
-              scope_prompter=self,
+              resources=self.resources,
+              scope_lister=flags.GetDefaultScopeLister(
+                  self.compute_client, self.project),
               messages=self.messages,
               network_interface_arg=args.network_interface,
               region=args.region)
     else:
       network_interfaces = [
           instance_template_utils.CreateNetworkInterfaceMessage(
-              scope_prompter=self,
+              resources=self.resources,
+              scope_lister=flags.GetDefaultScopeLister(
+                  self.compute_client, self.project),
               messages=self.messages,
               network=args.network,
               region=args.region,
@@ -145,13 +155,21 @@ class Create(base_classes.BaseAsyncCreator, image_utils.ImageExpander):
         preemptible=args.preemptible,
         restart_on_failure=args.restart_on_failure)
 
+    if args.no_service_account:
+      service_account = None
+    else:
+      service_account = args.service_account
     service_accounts = instance_utils.CreateServiceAccountMessages(
         messages=self.messages,
-        scopes=([] if args.no_scopes else args.scopes))
+        scopes=[] if args.no_scopes else args.scopes,
+        service_account=service_account)
 
     create_boot_disk = not instance_utils.UseExistingBootDisk(args.disk or [])
     if create_boot_disk:
-      image_uri, _ = self.ExpandImageFlag(
+      image_expander = image_utils.ImageExpander(self.compute_client,
+                                                 self.resources)
+      image_uri, _ = image_expander.ExpandImageFlag(
+          user_project=self.project,
           image=args.image,
           image_family=args.image_family,
           image_project=args.image_project,
@@ -200,7 +218,8 @@ class Create(base_classes.BaseAsyncCreator, image_utils.ImageExpander):
     machine_type = instance_utils.InterpretMachineType(
         machine_type=args.machine_type,
         custom_cpu=args.custom_cpu,
-        custom_memory=args.custom_memory)
+        custom_memory=args.custom_memory,
+        ext=getattr(args, 'custom_extensions', None))
 
     request = self.messages.ComputeInstanceTemplatesInsertRequest(
         instanceTemplate=self.messages.InstanceTemplate(
@@ -239,8 +258,9 @@ class CreateBeta(Create):
 
   @classmethod
   def Args(cls, parser):
-    _CommonArgs(parser, multiple_network_interface_cards=True,
-                release_track=base.ReleaseTrack.BETA)
+    _CommonArgs(parser, multiple_network_interface_cards=False,
+                release_track=base.ReleaseTrack.BETA,
+                support_alias_ip_ranges=False)
 
 
 @base.ReleaseTracks(base.ReleaseTrack.ALPHA)
@@ -261,4 +281,5 @@ class CreateAlpha(Create):
   @staticmethod
   def Args(parser):
     _CommonArgs(parser, multiple_network_interface_cards=True,
-                release_track=base.ReleaseTrack.ALPHA)
+                release_track=base.ReleaseTrack.ALPHA,
+                support_alias_ip_ranges=True)

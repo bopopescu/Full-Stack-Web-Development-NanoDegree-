@@ -41,11 +41,7 @@ class Read(base.Command):
         help=('Return entries that are not older than this value. '
               'Works only with DESC ordering and filters without a timestamp.'),
         default='1d')
-    parser.add_argument(
-        '--organization', required=False, metavar='ORGANIZATION_ID',
-        completion_resource='cloudresourcemanager.organizations',
-        list_command_path='organizations',
-        help='Read log entries associated with this organization')
+    util.AddNonProjectArgs(parser, 'Read log entries')
 
   def Run(self, args):
     """This is what gets called when the user runs this command.
@@ -72,14 +68,10 @@ class Read(base.Command):
     else:
       log_filter = args.log_filter
 
-    parent = None
-    if args.organization:
-      parent = 'organizations/%s' % args.organization
-
     return common.FetchLogs(log_filter,
                             order_by=args.order,
                             limit=args.limit,
-                            parent=parent)
+                            parent=util.GetParentFromArgs(args))
 
 
 Read.detailed_help = {

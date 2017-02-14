@@ -18,8 +18,10 @@ from apitools.base.py import exceptions as apitools_exceptions
 from googlecloudsdk.api_lib.deployment_manager import dm_v2_util
 from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
+from googlecloudsdk.command_lib.deployment_manager import dm_base
+from googlecloudsdk.command_lib.deployment_manager import dm_write
+from googlecloudsdk.command_lib.deployment_manager import flags
 from googlecloudsdk.core import log
-from googlecloudsdk.core import properties
 
 # Number of seconds (approximately) to wait for stop operation to complete.
 OPERATION_TIMEOUT = 20 * 60  # 20 mins
@@ -54,15 +56,8 @@ class Stop(base.Command):
           on the command line after this command. Positional arguments are
           allowed.
     """
-    parser.add_argument(
-        '--async',
-        help='Return immediately and print information about the Operation in '
-        'progress rather than waiting for the Operation to complete. '
-        '(default=False)',
-        default=False,
-        action='store_true')
-
-    parser.add_argument('deployment_name', help='Deployment name.')
+    flags.AddAsyncFlag(parser)
+    flags.AddDeploymentNameFlag(parser)
 
   def Run(self, args):
     """Run 'deployments stop'.
@@ -78,17 +73,12 @@ class Stop(base.Command):
     Raises:
       HttpException: An http error response was received while executing api
           request.
-      ToolException: The stop operation encountered an error.
     """
-    client = self.context['deploymentmanager-client']
-    messages = self.context['deploymentmanager-messages']
-    project = properties.VALUES.core.project.Get(required=True)
-
     # Get the fingerprint from the deployment to stop.
     try:
-      current_deployment = client.deployments.Get(
-          messages.DeploymentmanagerDeploymentsGetRequest(
-              project=project,
+      current_deployment = dm_base.GetClient().deployments.Get(
+          dm_base.GetMessages().DeploymentmanagerDeploymentsGetRequest(
+              project=dm_base.GetProject(),
               deployment=args.deployment_name
           )
       )
@@ -100,12 +90,13 @@ class Stop(base.Command):
       raise exceptions.HttpException(error, dm_v2_util.HTTP_ERROR_FORMAT)
 
     try:
-      operation = client.deployments.Stop(
-          messages.DeploymentmanagerDeploymentsStopRequest(
-              project=project,
+      operation = dm_base.GetClient().deployments.Stop(
+          dm_base.GetMessages().DeploymentmanagerDeploymentsStopRequest(
+              project=dm_base.GetProject(),
               deployment=args.deployment_name,
-              deploymentsStopRequest=messages.DeploymentsStopRequest(
-                  fingerprint=fingerprint,
+              deploymentsStopRequest=(
+                  dm_base.GetMessages().DeploymentsStopRequest(
+                      fingerprint=fingerprint)
               ),
           )
       )
@@ -116,23 +107,19 @@ class Stop(base.Command):
     else:
       op_name = operation.name
       try:
-        dm_v2_util.WaitForOperation(client, messages, op_name, project, 'stop',
-                                    OPERATION_TIMEOUT)
+        dm_write.WaitForOperation(op_name,
+                                  'stop',
+                                  dm_base.GetProject(),
+                                  timeout=OPERATION_TIMEOUT)
         log.status.Print('Stop operation ' + op_name
                          + ' completed successfully.')
-      except exceptions.ToolException:
-        # Operation timed out or had errors. Print this warning, then still
-        # show whatever operation can be gotten.
-        log.error('Stop operation ' + op_name
-                  + ' has errors or failed to complete within '
-                  + str(OPERATION_TIMEOUT) + ' seconds.')
       except apitools_exceptions.HttpError as error:
         raise exceptions.HttpException(error, dm_v2_util.HTTP_ERROR_FORMAT)
       try:
         # Fetch a list of the stopped resources.
-        response = client.resources.List(
-            messages.DeploymentmanagerResourcesListRequest(
-                project=project,
+        response = dm_base.GetClient().resources.List(
+            dm_base.GetMessages().DeploymentmanagerResourcesListRequest(
+                project=dm_base.GetProject(),
                 deployment=args.deployment_name,
             )
         )

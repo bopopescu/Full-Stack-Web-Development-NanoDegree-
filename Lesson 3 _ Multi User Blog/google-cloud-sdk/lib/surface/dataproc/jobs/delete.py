@@ -16,22 +16,21 @@
 
 from googlecloudsdk.api_lib.dataproc import util
 from googlecloudsdk.calliope import base
-from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.core import log
 from googlecloudsdk.core.console import console_io
 
 
 class Delete(base.DeleteCommand):
-  """Delete the record of an inactive job."""
+  """Delete the record of an inactive job.
 
-  detailed_help = {
-      'DESCRIPTION': '{description}',
-      'EXAMPLES': """\
-          To delete the record of a job, run:
+  Delete the record of an inactive job.
 
-            $ {command} job_id
-          """,
-  }
+  ## EXAMPLES
+
+  To delete the record of a job, run:
+
+    $ {command} job_id
+  """
 
   @staticmethod
   def Args(parser):
@@ -50,13 +49,22 @@ class Delete(base.DeleteCommand):
         region=job_ref.region,
         jobId=job_ref.jobId)
 
-    if not console_io.PromptContinue(
-        message="The job '{0}' will be deleted.".format(args.id)):
-      raise exceptions.ToolException('Deletion aborted by user.')
+    console_io.PromptContinue(
+        message="The job '{0}' will be deleted.".format(args.id),
+        cancel_on_no=True,
+        cancel_string='Deletion aborted by user.')
 
     client.projects_regions_jobs.Delete(request)
+
+    def _GetJob(job_ref):
+      return client.projects_regions_jobs.Get(
+          messages.DataprocProjectsRegionsJobsGetRequest(
+              projectId=job_ref.projectId,
+              region=job_ref.region,
+              jobId=job_ref.jobId))
+
     util.WaitForResourceDeletion(
-        client.projects_regions_jobs.Get, job_ref,
+        _GetJob, job_ref,
         message='Waiting for job deletion')
 
     log.DeletedResource(job_ref)

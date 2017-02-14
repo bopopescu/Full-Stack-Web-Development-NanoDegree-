@@ -13,6 +13,8 @@
 # limitations under the License.
 """Utilities for cloud resources."""
 
+import re
+
 from googlecloudsdk.core import exceptions
 
 
@@ -25,23 +27,21 @@ class CollectionInfo(object):
       path: str, Atomic URI template for this resource.
       flat_paths: {name->path}, Named detailed URI templates for this resource.
           If there is an entry ''->path it replaces path and corresponding param
-          attributes for resources parsing. path and param are still used when
-          generating requests, see request_type attribute.
+          attributes for resources parsing. path and params are not used
+          in this case.
           Also note that key in this dictionary is referred as subcollection,
           as it extends 'name' attribute.
       params: list(str), description of parameters in the path.
-      request_type: str, name of apitools generated type for Get request.
       name: str, collection name for this resource without leading api_name.
       base_url: str, URL for service providing these resources.
   """
 
   def __init__(self, api_name, api_version, base_url, name,
-               request_type, path, flat_paths, params):
+               path, flat_paths, params):
     self.api_name = api_name
     self.api_version = api_version
     self.base_url = base_url
     self.name = name
-    self.request_type = request_type
     self.path = path
     self.flat_paths = flat_paths
     self.params = params
@@ -49,6 +49,29 @@ class CollectionInfo(object):
   @property
   def full_name(self):
     return self.api_name + '.'  + self.name
+
+  def GetSubcollection(self, collection_name):
+    name = self.full_name
+    # collection_name could be equal to name in which case subcollection is
+    # empty string or have additional suffix .subcollection.
+    if collection_name.startswith(name):
+      return collection_name[len(name) + 1:]
+    raise KeyError('{0} does not exist in {1}'.format(collection_name, name))
+
+  def GetPathRegEx(self, subcollection):
+    """Returns regex for matching path template."""
+    path = self.GetPath(subcollection)
+    parts = []
+    prev_end = 0
+    for match in re.finditer('({[^}]+}/)|({[^}]+})$', path):
+      parts.append(path[prev_end:match.start()])
+      parts.append('([^/]+)')
+      if match.group(1):
+        parts.append('/')
+      prev_end = match.end()
+    if prev_end == len(path):
+      parts[-1] = '(.*)$'
+    return ''.join(parts)
 
   def GetParams(self, subcollection):
     """Returns ordered list of parameters for given subcollection.

@@ -25,6 +25,7 @@ from oauth2client import client
 
 
 DEVSHELL_ENV = 'DEVSHELL_CLIENT_PORT'
+DEVSHELL_ENV_IPV6_ENABLED = 'DEVSHELL_CLIENT_PORT_IPV6_ENABLED'
 
 
 class Error(Exception):
@@ -166,7 +167,11 @@ def _SendRecvPort(request, port):
   if len(nstr) > 5:
     raise ValueError('length too long')
 
-  s = socket.socket()
+  if socket.has_ipv6 and os.getenv(DEVSHELL_ENV_IPV6_ENABLED) is not None:
+    s = socket.socket(socket.AF_INET6)
+  else:
+    s = socket.socket()
+
   s.connect(('localhost', port))
   msg = '%s\n%s' % (nstr, data)
   s.sendall(msg)

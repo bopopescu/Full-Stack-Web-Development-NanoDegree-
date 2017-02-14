@@ -29,16 +29,16 @@ _DETAILED_HELP = """
 
   The binary log coordinates, if specified, act as the point up to which the
   source instance is cloned. If not specified, the source instance is
-  cloned up to the most recent binary log coordintes at the time the command is
+  cloned up to the most recent binary log coordinates at the time the command is
   executed.
 
   ## EXAMPLES
 
-  To clone a source instance to the most recent binary log coordintes:
+  To clone a source instance to the most recent binary log coordinates:
 
     $ {command} instance-foo instance-bar
 
-  or to clone at specific binary log coordintes:
+  or to clone at specific binary log coordinates:
 
     $ {command} instance-foo instance-bar --bin-log-file-name mysql-bin.000020 --bin-log-position 170
 """
@@ -70,12 +70,12 @@ class _BaseClone(object):
         required=False,
         help='Binary log file for the source instance.')
     filename_arg.detailed_help = """\
-        Represents the position (offset) inside the binary log file created by
-        the source instance if it has binary logs enabled.
+        Represents the name of the binary log file created by the source
+        instance if it has binary logs enabled.
         If specified, is the point up to which the source instance is cloned.
-        It must be specified along with --bin-log-file to form a valid binary
-        log coordinates.
-        e.g., 123 (a numeric value)
+        It must be specified along with --bin-log-position to form a valid
+        binary log coordinates.
+        e.g., mysql-bin.000001
         """
     position_arg = parser.add_argument(
         '--bin-log-position',
@@ -84,12 +84,12 @@ class _BaseClone(object):
         help='Position within the binary log file that represents the point'
         ' up to which the source is cloned.')
     position_arg.detailed_help = """\
-        Represents the name of the binary log file created by the source
-        instance if it has binary logs enabled.
+        Represents the position (offset) inside the binary log file created by
+        the source instance if it has binary logs enabled.
         If specified, is the point up to which the source instance is cloned.
-        It must be specified along with --bin-log-position to form a valid
-        binary log coordinates.
-        e.g., mysql-bin.000001
+        It must be specified along with --bin-log-file to form a valid binary
+        log coordinates.
+        e.g., 123 (a numeric value)
         """
 
   def _CheckSourceAndDestination(self, source_instance_ref,
@@ -178,11 +178,18 @@ class Clone(_BaseClone, base.Command):
     )
 
     if args.async:
-      return sql_client.operations.Get(operation_ref.Request())
+      return sql_client.operations.Get(
+          sql_messages.SqlOperationsGetRequest(
+              project=operation_ref.project,
+              instance=operation_ref.instance,
+              operation=operation_ref.operation))
     operations.OperationsV1Beta3.WaitForOperation(sql_client, operation_ref,
                                                   'Cloning Cloud SQL instance')
     log.CreatedResource(destination_instance_ref)
-    rsource = sql_client.instances.Get(destination_instance_ref.Request())
+    rsource = sql_client.instances.Get(
+        sql_messages.SqlInstancesGetRequest(
+            project=destination_instance_ref.project,
+            instance=destination_instance_ref.instance))
     cache = remote_completion.RemoteCompletion()
     cache.AddToCache(destination_instance_ref.SelfLink())
     return rsource
@@ -245,11 +252,17 @@ class CloneBeta(_BaseClone, base.Command):
     )
 
     if args.async:
-      return sql_client.operations.Get(operation_ref.Request())
+      return sql_client.operations.Get(
+          sql_messages.SqlOperationsGetRequest(
+              project=operation_ref.project,
+              operation=operation_ref.operation))
     operations.OperationsV1Beta4.WaitForOperation(sql_client, operation_ref,
                                                   'Cloning Cloud SQL instance')
     log.CreatedResource(destination_instance_ref)
-    rsource = sql_client.instances.Get(destination_instance_ref.Request())
+    rsource = sql_client.instances.Get(
+        sql_messages.SqlInstancesGetRequest(
+            project=destination_instance_ref.project,
+            instance=destination_instance_ref.instance))
     cache = remote_completion.RemoteCompletion()
     cache.AddToCache(destination_instance_ref.SelfLink())
     return rsource

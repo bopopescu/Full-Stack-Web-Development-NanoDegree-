@@ -24,32 +24,45 @@ class Collections(enum.Enum):
 
   PROJECTS_CONFIGS = (
       'projects.configs',
-      'projects/{projectsId}/configs/{configsId}',
-      {},
-      [u'projectsId', u'configsId'],
-      'RuntimeconfigProjectsConfigsGetRequest',)
+      '{+name}',
+      {
+          '':
+              'projects/{projectsId}/configs/{configsId}',
+      },
+      [u'name']
+  )
   PROJECTS_CONFIGS_OPERATIONS = (
       'projects.configs.operations',
-      'projects/{projectsId}/configs/{configsId}/operations/{operationsId}',
-      {},
-      [u'projectsId', u'configsId', u'operationsId'],
-      'RuntimeconfigProjectsConfigsOperationsGetRequest',)
+      '{+name}',
+      {
+          '':
+              'projects/{projectsId}/configs/{configsId}/operations/'
+              '{operationsId}',
+      },
+      [u'name']
+  )
   PROJECTS_CONFIGS_VARIABLES = (
       'projects.configs.variables',
-      'projects/{projectsId}/configs/{configsId}/variables/{variablesId}',
-      {},
-      [u'projectsId', u'configsId', u'variablesId'],
-      'RuntimeconfigProjectsConfigsVariablesGetRequest',)
+      '{+name}',
+      {
+          '':
+              'projects/{projectsId}/configs/{configsId}/variables/'
+              '{variablesId}',
+      },
+      [u'name']
+  )
   PROJECTS_CONFIGS_WAITERS = (
       'projects.configs.waiters',
-      'projects/{projectsId}/configs/{configsId}/waiters/{waitersId}',
-      {},
-      [u'projectsId', u'configsId', u'waitersId'],
-      'RuntimeconfigProjectsConfigsWaitersGetRequest',)
+      '{+name}',
+      {
+          '':
+              'projects/{projectsId}/configs/{configsId}/waiters/{waitersId}',
+      },
+      [u'name']
+  )
 
-  def __init__(self, collection_name, path, flat_paths, params, request_type):
+  def __init__(self, collection_name, path, flat_paths, params):
     self.collection_name = collection_name
     self.path = path
     self.flat_paths = flat_paths
     self.params = params
-    self.request_type = request_type

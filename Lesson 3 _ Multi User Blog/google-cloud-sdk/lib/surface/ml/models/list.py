@@ -15,9 +15,10 @@
 
 from googlecloudsdk.api_lib.ml import models
 from googlecloudsdk.calliope import base
+from googlecloudsdk.core import properties
+from googlecloudsdk.core import resources
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
 class ListBeta(base.ListCommand):
   """List existing Cloud ML models."""
 
@@ -34,4 +35,7 @@ class ListBeta(base.ListCommand):
     Returns:
       Some value that we want to have printed later.
     """
-    return models.List()
+    project_ref = resources.REGISTRY.Parse(
+        properties.VALUES.core.project.Get(required=True),
+        collection='ml.projects')
+    return models.ModelsClient().List(project_ref)

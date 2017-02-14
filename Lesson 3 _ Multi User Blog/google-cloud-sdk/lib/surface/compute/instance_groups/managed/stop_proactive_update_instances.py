@@ -15,6 +15,7 @@
 from googlecloudsdk.api_lib.compute import base_classes
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.compute import flags
+from googlecloudsdk.command_lib.compute import scope as compute_scope
 from googlecloudsdk.command_lib.compute.instance_groups import flags as instance_groups_flags
 
 
@@ -24,7 +25,8 @@ class StopUpdateInstancesAlpha(base_classes.BaseAsyncMutator):
 
   @staticmethod
   def Args(parser):
-    instance_groups_flags.ZONAL_INSTANCE_GROUP_MANAGER_ARG.AddArgument(parser)
+    instance_groups_flags.MULTISCOPE_INSTANCE_GROUP_MANAGER_ARG.AddArgument(
+        parser)
 
   @property
   def method(self):
@@ -39,21 +41,29 @@ class StopUpdateInstancesAlpha(base_classes.BaseAsyncMutator):
     return 'instanceGroupManagers'
 
   def CreateRequests(self, args):
-    resource_arg = instance_groups_flags.ZONAL_INSTANCE_GROUP_MANAGER_ARG
-    default_scope = flags.ScopeEnum.ZONE
+    resource_arg = instance_groups_flags.MULTISCOPE_INSTANCE_GROUP_MANAGER_ARG
+    default_scope = compute_scope.ScopeEnum.ZONE
     scope_lister = flags.GetDefaultScopeLister(
         self.compute_client, self.project)
     igm_ref = resource_arg.ResolveAsResource(
         args, self.resources, default_scope=default_scope,
         scope_lister=scope_lister)
-    service = self.compute.instanceGroupManagers
-    request = (self.messages.ComputeInstanceGroupManagersPatchRequest(
-        project=self.project,
-        zone=igm_ref.zone,
-        instanceGroupManager=igm_ref.Name(),
-        instanceGroupManagerResource=(self.messages.InstanceGroupManager(
-            updatePolicy=self.messages.InstanceGroupManagerUpdatePolicy(type=(
-                self.messages.InstanceGroupManagerUpdatePolicy
-                .TypeValueValuesEnum.OPPORTUNISTIC))))))
-
+    igm_resource = self.messages.InstanceGroupManager(
+        updatePolicy=self.messages.InstanceGroupManagerUpdatePolicy(type=(
+            self.messages.InstanceGroupManagerUpdatePolicy
+            .TypeValueValuesEnum.OPPORTUNISTIC)))
+    if hasattr(igm_ref, 'zone'):
+      service = self.compute.instanceGroupManagers
+      request = self.messages.ComputeInstanceGroupManagersPatchRequest(
+          project=self.project,
+          zone=igm_ref.zone,
+          instanceGroupManager=igm_ref.Name(),
+          instanceGroupManagerResource=igm_resource)
+    elif hasattr(igm_ref, 'region'):
+      service = self.compute.regionInstanceGroupManagers
+      request = self.messages.ComputeRegionInstanceGroupManagersPatchRequest(
+          project=self.project,
+          region=igm_ref.region,
+          instanceGroupManager=igm_ref.Name(),
+          instanceGroupManagerResource=igm_resource)
     return [(service, self.method, request)]

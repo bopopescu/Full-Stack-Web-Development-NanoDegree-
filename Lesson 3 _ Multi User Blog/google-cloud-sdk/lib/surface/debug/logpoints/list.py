@@ -14,13 +14,12 @@
 
 """List command for gcloud debug logpoints command group."""
 
-import argparse
 import datetime
 
 from googlecloudsdk.api_lib.debug import debug
 from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
-from googlecloudsdk.core import log
+from googlecloudsdk.command_lib.debug import flags
 from googlecloudsdk.core import properties
 from googlecloudsdk.core.util import times
 
@@ -38,22 +37,12 @@ class List(base.ListCommand):
   @staticmethod
   def Args(parser):
     base.URI_FLAG.RemoveFromParser(parser)
+    flags.AddIdOptions(parser, 'logpoint', 'logpoints', 'listed')
     parser.add_argument(
-        'id_or_location_regexp', metavar='(ID|LOCATION-REGEXP)', nargs='*',
+        '--all-users', action='store_true', default=True,
         help="""\
-            Zero or more logpoint IDs, resource identifiers, or regular
-            expressions to match against logpoint locations. If present, only
-            logpoints matching one or more of these values will be displayed.
+            If false, display only logpoints created by the current user.
         """)
-    parser.add_argument(
-        '--all-users', action='store_true', default=False,
-        help="""\
-            If set, display logpoints from all users, rather than only the
-            current user.
-        """)
-    parser.add_argument(
-        '--include-expired', action='store_true', default=False,
-        help=argparse.SUPPRESS)
     parser.add_argument(
         '--include-inactive', default=300,
         type=arg_parsers.BoundedInt(lower_bound=0, unlimited=True),
@@ -65,17 +54,11 @@ class List(base.ListCommand):
 
   def Run(self, args):
     """Run the list command."""
-    if args.include_expired:
-      # The (deprecated, hidden) --include-expired argument is equivalent to
-      # --include_inactive=unlimited
-      log.warn('The --include-expired flag has been deprecated. Please use '
-               '--include-inactive=unlimited instead.')
-      args.include_inactive = None
     project_id = properties.VALUES.core.project.Get(required=True)
     debugger = debug.Debugger(project_id)
     debuggee = debugger.FindDebuggee(args.target)
     logpoints = debuggee.ListBreakpoints(
-        args.id_or_location_regexp, include_all_users=args.all_users,
+        args.location, resource_ids=args.ids, include_all_users=args.all_users,
         include_inactive=(args.include_inactive != 0),
         restrict_to_type=debugger.LOGPOINT_TYPE)
 
@@ -104,5 +87,5 @@ def _ShouldInclude(logpoint, cutoff_time):
   """
   if not logpoint.isFinalState or not logpoint.finalTime:
     return True
-  final_time = times.ParseDateTime(logpoint.finalTime, times.UTC)
+  final_time = times.ParseDateTime(logpoint.finalTime, tzinfo=times.UTC)
   return final_time >= cutoff_time

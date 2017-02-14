@@ -18,7 +18,6 @@ from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.ml import flags
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
 class DescribeBeta(base.DescribeCommand):
   """Describe an existing Cloud ML model."""
 
@@ -40,4 +39,4 @@ class DescribeBeta(base.DescribeCommand):
     Returns:
       Some value that we want to have printed later.
     """
-    return models.Get(args.model)
+    return models.ModelsClient().Get(args.model)

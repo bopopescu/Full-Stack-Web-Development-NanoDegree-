@@ -18,7 +18,6 @@ from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.projects import util as command_lib_util
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.GA)
 class List(base.ListCommand):
   """List projects accessible by the active account.
 
@@ -45,6 +44,4 @@ class List(base.ListCommand):
 
   def Run(self, args):
     """Run the list command."""
-
-    # TODO(user): b/27946801 handle --limit,--page-size,--filter
     return projects_api.List()

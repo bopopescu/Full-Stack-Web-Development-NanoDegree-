@@ -26,6 +26,7 @@ from googlecloudsdk.core.configurations import properties_file as prop_files_lib
 from googlecloudsdk.core.console import console_attr
 from googlecloudsdk.core.docker import constants as const_lib
 from googlecloudsdk.core.util import http_proxy_types
+from googlecloudsdk.core.util import times
 
 
 # Try to parse the command line flags at import time to see if someone provided
@@ -436,7 +437,7 @@ class _Section(object):
       return self.__properties[property_name]
     except KeyError:
       raise NoSuchPropertyError(
-          'Section "{s}" has no property "{p}".'.format(
+          'Section [{s}] has no property [{p}].'.format(
               s=self.__name,
               p=property_name))
 
@@ -542,17 +543,15 @@ class _SectionApp(_Section):
         'previously deployed version is stopped. If False, older versions must '
         'be stopped manually.',
         default=True)
-    def CloudBuildTimeoutValidator(cloud_build_timeout):
-      if cloud_build_timeout is None:
+    def CloudBuildTimeoutValidator(build_timeout):
+      if build_timeout is None:
         return
-      max_timeout = 5 * 60 * 60
       try:
-        if int(cloud_build_timeout) > max_timeout:
-          raise InvalidValueError(
-              'cloud_build_timeout may not exceed {0}'.format(max_timeout))
+        seconds = int(build_timeout)  # bare int means seconds
       except ValueError:
-        raise InvalidValueError(
-            'cloud_build_timeout must be an integer')
+        seconds = times.ParseDuration(build_timeout).total_seconds
+      if seconds <= 0:
+        raise InvalidValueError('Timeout must be a positive time duration.')
     self.cloud_build_timeout = self._Add(
         'cloud_build_timeout',
         validator=CloudBuildTimeoutValidator,
@@ -583,14 +582,15 @@ class _SectionApp(_Section):
         'num_file_upload_processes',
         default='32',
         hidden=True)
-    # This property is currently ignored except on OS X Sierra
+    # This property is currently ignored except on OS X Sierra or beta
+    # deployments.
     # There's a theoretical benefit to exceeding the number of cores available,
     # since the task is bound by network/API latency among other factors, and
     # mini-benchmarks validated this (I got speedup from 4 threads to 8 on a
     # 4-core machine).
     self.num_file_upload_threads = self._Add(
         'num_file_upload_threads',
-        default='8',
+        default=None,
         hidden=True)
 
     def GetRuntimeRoot():
@@ -605,6 +605,21 @@ class _SectionApp(_Section):
         callbacks=[GetRuntimeRoot],
         hidden=True)
 
+    # Whether or not to use the (currently under-development) Flex Runtime
+    # Builders, as opposed to Externalized Runtimes.
+    self.use_runtime_builders = self._Add(
+        'use_runtime_builders',
+        default=False,
+        hidden=True)
+    # The Cloud Storage path prefix for the Flex Runtime Builder configuration
+    # files. The configuration files will live at
+    # "<PREFIX>/<runtime>-<version>.yaml" or "<PREFIX>/<runtime>.yaml" for the
+    # latest version.
+    self.runtime_builders_root = self._Add(
+        'runtime_builders_root',
+        default='gs://google_appengine/flex_builders/',
+        hidden=True)
+
 
 class _SectionContainer(_Section):
   """Contains the properties for the 'container' section."""
@@ -612,25 +627,28 @@ class _SectionContainer(_Section):
   def __init__(self):
     super(_SectionContainer, self).__init__('container')
     self.cluster = self._Add(
-        'cluster',
-        help_text='The name of the cluster to use by default when working with '
-        'Container Engine.')
+        'cluster', help_text='The name of the cluster to use by default when '
+        'working with Container Engine.')
     self.use_client_certificate = self._AddBool(
         'use_client_certificate',
         default=False,
         help_text='Use the cluster\'s client certificate to authenticate to '
         'the cluster API server.')
+    self.use_app_default_credentials = self._AddBool(
+        'use_application_default_credentials',
+        default=True,
+        help_text='Use application default credentials to authenticate to '
+        'the cluster API server.')
+
     def BuildTimeoutValidator(build_timeout):
       if build_timeout is None:
         return
-      max_timeout = 5 * 60 * 60
       try:
-        if int(build_timeout) > max_timeout:
-          raise InvalidValueError(
-              'build_timeout may not exceed %d', max_timeout)
+        seconds = int(build_timeout)  # bare int means seconds
       except ValueError:
-        raise InvalidValueError(
-            'build_timeout must be an integer')
+        seconds = times.ParseDuration(build_timeout).total_seconds
+      if seconds <= 0:
+        raise InvalidValueError('Timeout must be a positive time duration.')
     self.build_timeout = self._Add(
         'build_timeout',
         validator=BuildTimeoutValidator,
@@ -675,10 +693,11 @@ class _SectionCore(_Section):
         'run `gcloud auth list` to see the accounts you currently have '
         'available.',
         callbacks=[_GetDevshellAccount, _GetGCEAccount])
-    self.activate_on_create = self._AddBool(
-        'activate_on_create',
-        help_text='If True, creating a new configuration using `gcloud config '
-        'configurations create` will also activate it.')
+    self.disable_collection_path_deprecation_warning = self._AddBool(
+        'disable_collection_path_deprecation_warning',
+        hidden=True,
+        help_text='If False, any usage of collection paths will result in '
+                  'deprecation warning. Set it to False to disable it.')
     self.default_regional_backend_service = self._AddBool(
         'default_regional_backend_service',
         help_text='If True, backend services in `gcloud compute '
@@ -702,6 +721,12 @@ class _SectionCore(_Section):
         'collected.  This is value is set based on your choices during '
         'installation, but can be changed at any time.  For more information, '
         'see: https://cloud.google.com/sdk/usage-statistics')
+    self.enable_gri = self._AddBool(
+        'enable_gri',
+        default=False,
+        hidden=True,
+        help_text='If True, the parser for gcloud Resource Identifiers will be'
+                  'enabled when interpreting resource arguments.')
     self.api_host = self._Add(
         'api_host',
         hidden=True,
@@ -730,6 +755,9 @@ class _SectionCore(_Section):
         default=True)
     self.print_unhandled_tracebacks = self._AddBool(
         'print_unhandled_tracebacks',
+        hidden=True)
+    self.print_handled_tracebacks = self._AddBool(
+        'print_handled_tracebacks',
         hidden=True)
     self.trace_token = self._Add(
         'trace_token',
@@ -962,6 +990,7 @@ class _SectionApiEndpointOverrides(_Section):
     self.compute = self._Add('compute')
     self.cloudbilling = self._Add('cloudbilling')
     self.cloudbuild = self._Add('cloudbuild')
+    self.cloudkms = self._Add('cloudkms')
     self.clouduseraccounts = self._Add('clouduseraccounts')
     self.container = self._Add('container')
     self.containeranalysis = self._Add('containeranalysis')
@@ -977,12 +1006,14 @@ class _SectionApiEndpointOverrides(_Section):
     self.logging = self._Add('logging')
     self.ml = self._Add('ml')
     self.cloudresourcemanager = self._Add('cloudresourcemanager')
+    self.cloudresourcesearch = self._Add('cloudresourcesearch')
     self.runtimeconfig = self._Add('runtimeconfig')
     self.testing = self._Add('testing')
     self.toolresults = self._Add('toolresults')
     self.servicemanagement = self._Add('servicemanagement')
     self.serviceregistry = self._Add('serviceregistry')
     self.source = self._Add('source')
+    self.sourcerepo = self._Add('sourcerepo')
     self.sql = self._Add('sql')
     self.pubsub = self._Add('pubsub')
 
@@ -1382,7 +1413,7 @@ def PersistProperty(prop, value, scope=None):
     if not config_file:
       raise MissingInstallationConfig()
     prop_files_lib.PersistProperty(config_file, prop.section, prop.name, value)
-    named_configs.ActivePropertiesFile.Invalidate()
+    named_configs.ActivePropertiesFile.Invalidate(mark_changed=True)
   else:
     active_config = named_configs.ConfigurationStore.ActiveConfig()
     active_config.PersistProperty(prop.section, prop.name, value)

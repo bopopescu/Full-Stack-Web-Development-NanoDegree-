@@ -19,6 +19,24 @@ from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.command_lib.compute import flags as compute_flags
 
 
+ZONAL_INSTANCE_GROUP_ARG = compute_flags.ResourceArgument(
+    name='--instance-group',
+    resource_name='instance group',
+    completion_resource_id='compute.instanceGroups',
+    zonal_collection='compute.instanceGroups',
+    zone_explanation=compute_flags.ZONE_PROPERTY_EXPLANATION)
+
+
+MULTISCOPE_INSTANCE_GROUP_ARG = compute_flags.ResourceArgument(
+    name='--instance-group',
+    resource_name='instance group',
+    completion_resource_id='compute.instanceGroups',
+    zonal_collection='compute.instanceGroups',
+    regional_collection='compute.regionInstanceGroups',
+    zone_explanation=compute_flags.ZONE_PROPERTY_EXPLANATION,
+    region_explanation=compute_flags.REGION_PROPERTY_EXPLANATION)
+
+
 GLOBAL_BACKEND_SERVICE_ARG = compute_flags.ResourceArgument(
     resource_name='backend service',
     completion_resource_id='compute.backendServices',
@@ -71,6 +89,34 @@ def BackendServiceArgumentForUrlMapPathMatcher(required=True):
           'matcher cannot match.'))
 
 
+def BackendServiceArgumentForTargetSslProxy(required=True):
+  return compute_flags.ResourceArgument(
+      resource_name='backend service',
+      name='--backend-service',
+      required=required,
+      completion_resource_id='compute.backendServices',
+      global_collection='compute.backendServices',
+      short_help=('.'),
+      detailed_help="""\
+        A backend service that will be used for connections to the target SSL
+        proxy.
+        """)
+
+
+def BackendServiceArgumentForTargetTcpProxy(required=True):
+  return compute_flags.ResourceArgument(
+      resource_name='backend service',
+      name='--backend-service',
+      required=required,
+      completion_resource_id='compute.backendServices',
+      global_collection='compute.backendServices',
+      short_help=('.'),
+      detailed_help="""\
+        A backend service that will be used for connections to the target TCP
+        proxy.
+        """)
+
+
 def AddLoadBalancingScheme(parser):
   parser.add_argument(
       '--load-balancing-scheme',
@@ -106,6 +152,94 @@ def AddEnableCdn(parser, default):
       Enable Cloud CDN for the backend service. Cloud CDN can cache HTTP
       responses from a backend service at the edge of the network, close to
       users. Cloud CDN is disabled by default.
+      """
+
+
+def AddCacheKeyIncludeProtocol(parser, default):
+  """Adds cache key include/exclude protocol flag to the argparse."""
+  cache_key_include_protocol = parser.add_argument(
+      '--cache-key-include-protocol',
+      action='store_true',
+      default=default,
+      help='Enable including protocol in cache key.')
+  cache_key_include_protocol.detailed_help = """\
+      Enable including protocol in cache key. If enabled, http and https
+      requests will be cached separately. Can only be applied for global
+      resources.
+      """
+
+
+def AddCacheKeyIncludeHost(parser, default):
+  """Adds cache key include/exclude host flag to the argparse."""
+  cache_key_include_host = parser.add_argument(
+      '--cache-key-include-host',
+      action='store_true',
+      default=default,
+      help='Enable including host in cache key.')
+  cache_key_include_host.detailed_help = """\
+      Enable including host in cache key. If enabled, requests to different
+      hosts will be cached separately. Can only be applied for global resources.
+      """
+
+
+def AddCacheKeyIncludeQueryString(parser, default):
+  """Adds cache key include/exclude query string flag to the argparse."""
+  cache_key_include_query_string = parser.add_argument(
+      '--cache-key-include-query-string',
+      action='store_true',
+      default=default,
+      help='Enable including query string in cache key.')
+  update_command = default is None
+  if update_command:
+    cache_key_include_query_string.detailed_help = """\
+        Enable including query string in cache key. If enabled, the query string
+        parameters will be included according to
+        --cache-key-query-string-whitelist and
+        --cache-key-query-string-blacklist. If disabled, the entire query string
+        will be excluded. Use "--cache-key-query-string-blacklist=" (sets the
+        blacklist to the empty list) to include the entire query string. Can
+        only be applied for global resources.
+        """
+  else:  # create command
+    cache_key_include_query_string.detailed_help = """\
+        Enable including query string in cache key. If enabled, the query string
+        parameters will be included according to
+        --cache-key-query-string-whitelist and
+        --cache-key-query-string-blacklist. If neither is set, the entire query
+        string will be included. If disabled, then the entire query string will
+        be excluded. Can only be applied for global resources.
+        """
+
+
+def AddCacheKeyQueryStringList(parser):
+  cache_key_query_string_list = parser.add_mutually_exclusive_group()
+  cache_key_query_string_whitelist = cache_key_query_string_list.add_argument(
+      '--cache-key-query-string-whitelist',
+      type=arg_parsers.ArgList(min_length=1),
+      metavar='QUERY_STRING',
+      default=None,
+      help=('Specifies a comma separated list of query string parameters'
+            'to include in cache keys.'))
+  cache_key_query_string_whitelist.detailed_help = """\
+      Specifies a comma separated list of query string parameters to include
+      in cache keys. All other parameters will be excluded. Either specify
+      --cache-key-query-string-whitelist or --cache-key-query-string-blacklist,
+      not both. '&' and '=' will be percent encoded and not treated as
+      delimiters. Can only be applied for global resources.
+      """
+  cache_key_query_string_blacklist = cache_key_query_string_list.add_argument(
+      '--cache-key-query-string-blacklist',
+      type=arg_parsers.ArgList(),
+      metavar='QUERY_STRING',
+      default=None,
+      help=('Specifies a comma separated list of query string parameters'
+            'to exclude in cache keys.'))
+  cache_key_query_string_blacklist.detailed_help = """\
+      Specifies a comma separated list of query string parameters to exclude
+      in cache keys. All other parameters will be included. Either specify
+      --cache-key-query-string-whitelist or --cache-key-query-string-blacklist,
+      not both. '&' and '=' will be percent encoded and not treated as
+      delimiters. Can only be applied for global resources.
       """
 
 
@@ -151,21 +285,14 @@ def AddHttpsHealthChecks(parser):
 
 def AddIap(parser):
   """Add support for --iap flag."""
-  identity_function = lambda x: x
-  arg_dict_spec = {'enabled': None,
-                   'disabled': None,
-                   'oauth2-client-id': identity_function,
-                   'oauth2-client-secret': identity_function}
-  iap_flag = parser.add_argument(
+  # We set this to str, but it's really an ArgDict.  See
+  # backend_services_utils.GetIAP for the re-parse and rationale.
+  return parser.add_argument(
       '--iap',
-      type=arg_parsers.ArgDict(min_length=1,
-                               spec=arg_dict_spec,
-                               allow_key_only=True),
+      metavar=('disabled|enabled,['
+               'oauth2-client-id=OAUTH2-CLIENT-ID,'
+               'oauth2-client-secret=OAUTH2-CLIENT-SECRET]'),
       help='Specifies a list of settings for IAP service.')
-  iap_flag.detailed_help = """\
-      Enable or disable IAP service and/or specify OAuth2 client ID and client
-      secret for IAP service.
-      """
 
 
 def AddSessionAffinity(parser, internal_lb=False, target_pools=False,
@@ -208,6 +335,7 @@ def AddSessionAffinity(parser, internal_lb=False, target_pools=False,
 
 
 def AddAffinityCookieTtl(parser, hidden=False):
+  """Adds affinity cookie Ttl flag to the argparse."""
   if hidden:
     help_str = argparse.SUPPRESS
   else:

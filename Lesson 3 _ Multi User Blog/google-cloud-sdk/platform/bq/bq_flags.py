@@ -92,6 +92,10 @@ flags.DEFINE_multistring(
     'job_property', None,
     'Additional key-value pairs to include in the properties field of '
     'the job configuration')  # No period: Multistring adds flagspec suffix.
+flags.DEFINE_string(
+    'application_default_credential_file', '',
+    'See https://developers.google.com/identity/protocols/'
+    'application-default-credentials for more info.')
 flags.DEFINE_boolean(
     'use_gce_service_account', False,
     'Use this when running on a Google Compute Engine instance to use service '
@@ -123,6 +127,7 @@ flags.DEFINE_boolean(
     'enable_gdrive', None,
     'When set to true, requests new OAuth token with GDrive scope. '
     'When set to false, requests new OAuth token without GDrive scope.')
+
 
 def ResolveApiInfoFromFlags():
   """Determine an api and api_version."""

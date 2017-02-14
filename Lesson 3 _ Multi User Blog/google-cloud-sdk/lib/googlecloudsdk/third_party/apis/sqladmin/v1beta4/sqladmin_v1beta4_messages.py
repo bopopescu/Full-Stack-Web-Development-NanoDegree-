@@ -194,6 +194,8 @@ class DatabaseInstance(_messages.Message):
       managed container. SECOND_GEN: A newer Cloud SQL backend that runs in a
       Compute Engine VM. EXTERNAL: A MySQL server that is not managed by
       Google.
+    connectionName: Connection name of the Cloud SQL instance used in
+      connection strings.
     currentDiskSize: The current disk usage of the instance in bytes. This
       property has been deprecated. Users should use the
       "cloudsql.googleapis.com/database/disk/bytes_used" metric in Cloud
@@ -266,28 +268,29 @@ class DatabaseInstance(_messages.Message):
     name = _messages.StringField(2)
 
   backendType = _messages.StringField(1)
-  currentDiskSize = _messages.IntegerField(2)
-  databaseVersion = _messages.StringField(3)
-  etag = _messages.StringField(4)
-  failoverReplica = _messages.MessageField('FailoverReplicaValue', 5)
-  instanceType = _messages.StringField(6)
-  ipAddresses = _messages.MessageField('IpMapping', 7, repeated=True)
-  ipv6Address = _messages.StringField(8)
-  kind = _messages.StringField(9, default=u'sql#instance')
-  masterInstanceName = _messages.StringField(10)
-  maxDiskSize = _messages.IntegerField(11)
-  name = _messages.StringField(12)
-  onPremisesConfiguration = _messages.MessageField('OnPremisesConfiguration', 13)
-  project = _messages.StringField(14)
-  region = _messages.StringField(15)
-  replicaConfiguration = _messages.MessageField('ReplicaConfiguration', 16)
-  replicaNames = _messages.StringField(17, repeated=True)
-  selfLink = _messages.StringField(18)
-  serverCaCert = _messages.MessageField('SslCert', 19)
-  serviceAccountEmailAddress = _messages.StringField(20)
-  settings = _messages.MessageField('Settings', 21)
-  state = _messages.StringField(22)
-  suspensionReason = _messages.StringField(23, repeated=True)
+  connectionName = _messages.StringField(2)
+  currentDiskSize = _messages.IntegerField(3)
+  databaseVersion = _messages.StringField(4)
+  etag = _messages.StringField(5)
+  failoverReplica = _messages.MessageField('FailoverReplicaValue', 6)
+  instanceType = _messages.StringField(7)
+  ipAddresses = _messages.MessageField('IpMapping', 8, repeated=True)
+  ipv6Address = _messages.StringField(9)
+  kind = _messages.StringField(10, default=u'sql#instance')
+  masterInstanceName = _messages.StringField(11)
+  maxDiskSize = _messages.IntegerField(12)
+  name = _messages.StringField(13)
+  onPremisesConfiguration = _messages.MessageField('OnPremisesConfiguration', 14)
+  project = _messages.StringField(15)
+  region = _messages.StringField(16)
+  replicaConfiguration = _messages.MessageField('ReplicaConfiguration', 17)
+  replicaNames = _messages.StringField(18, repeated=True)
+  selfLink = _messages.StringField(19)
+  serverCaCert = _messages.MessageField('SslCert', 20)
+  serviceAccountEmailAddress = _messages.StringField(21)
+  settings = _messages.MessageField('Settings', 22)
+  state = _messages.StringField(23)
+  suspensionReason = _messages.StringField(24, repeated=True)
 
 
 class DatabasesListResponse(_messages.Message):
@@ -518,6 +521,16 @@ class InstancesRestoreBackupRequest(_messages.Message):
   restoreBackupContext = _messages.MessageField('RestoreBackupContext', 1)
 
 
+class InstancesTruncateLogRequest(_messages.Message):
+  """Instance truncate log request.
+
+  Fields:
+    truncateLogContext: Contains details about the truncate log operation.
+  """
+
+  truncateLogContext = _messages.MessageField('TruncateLogContext', 1)
+
+
 class IpConfiguration(_messages.Message):
   """IP Management configuration.
 
@@ -543,10 +556,14 @@ class IpMapping(_messages.Message):
     timeToRetire: The due time for this IP to be retired in RFC 3339 format,
       for example 2012-11-15T16:19:00.094Z. This field is only available when
       the IP is scheduled to be retired.
+    type: The type of this IP address. A PRIMARY address is an address that
+      can accept incoming connections. An OUTGOING address is the source
+      address of connections originating from the instance, if supported.
   """
 
   ipAddress = _messages.StringField(1)
   timeToRetire = _message_types.DateTimeField(2)
+  type = _messages.StringField(3)
 
 
 class LocationPreference(_messages.Message):
@@ -786,6 +803,7 @@ class Settings(_messages.Message):
     authorizedGaeApplications: The App Engine app IDs that can access this
       instance. This property is only applicable to First Generation
       instances.
+    availabilityType: Reserved for future use.
     backupConfiguration: The daily backup configuration for the instance.
     crashSafeReplicationEnabled: Configuration specific to read replica
       instances. Indicates whether database flags for crash-safe replication
@@ -823,27 +841,32 @@ class Settings(_messages.Message):
       this instance and do not try to update this value.
     storageAutoResize: Configuration to increase storage size automatically.
       The default value is false. Applies only to Second Generation instances.
+    storageAutoResizeLimit: The maximum size to which storage capacity can be
+      automatically increased. The default value is 0, which specifies that
+      there is no limit. Applies only to Second Generation instances.
     tier: The tier of service for this instance, for example D1, D2. For more
       information, see pricing.
   """
 
   activationPolicy = _messages.StringField(1)
   authorizedGaeApplications = _messages.StringField(2, repeated=True)
-  backupConfiguration = _messages.MessageField('BackupConfiguration', 3)
-  crashSafeReplicationEnabled = _messages.BooleanField(4)
-  dataDiskSizeGb = _messages.IntegerField(5)
-  dataDiskType = _messages.StringField(6)
-  databaseFlags = _messages.MessageField('DatabaseFlags', 7, repeated=True)
-  databaseReplicationEnabled = _messages.BooleanField(8)
-  ipConfiguration = _messages.MessageField('IpConfiguration', 9)
-  kind = _messages.StringField(10, default=u'sql#settings')
-  locationPreference = _messages.MessageField('LocationPreference', 11)
-  maintenanceWindow = _messages.MessageField('MaintenanceWindow', 12)
-  pricingPlan = _messages.StringField(13)
-  replicationType = _messages.StringField(14)
-  settingsVersion = _messages.IntegerField(15)
-  storageAutoResize = _messages.BooleanField(16)
-  tier = _messages.StringField(17)
+  availabilityType = _messages.StringField(3)
+  backupConfiguration = _messages.MessageField('BackupConfiguration', 4)
+  crashSafeReplicationEnabled = _messages.BooleanField(5)
+  dataDiskSizeGb = _messages.IntegerField(6)
+  dataDiskType = _messages.StringField(7)
+  databaseFlags = _messages.MessageField('DatabaseFlags', 8, repeated=True)
+  databaseReplicationEnabled = _messages.BooleanField(9)
+  ipConfiguration = _messages.MessageField('IpConfiguration', 10)
+  kind = _messages.StringField(11, default=u'sql#settings')
+  locationPreference = _messages.MessageField('LocationPreference', 12)
+  maintenanceWindow = _messages.MessageField('MaintenanceWindow', 13)
+  pricingPlan = _messages.StringField(14)
+  replicationType = _messages.StringField(15)
+  settingsVersion = _messages.IntegerField(16)
+  storageAutoResize = _messages.BooleanField(17)
+  storageAutoResizeLimit = _messages.IntegerField(18)
+  tier = _messages.StringField(19)
 
 
 class SqlBackupRunsDeleteRequest(_messages.Message):
@@ -1175,6 +1198,21 @@ class SqlInstancesStopReplicaRequest(_messages.Message):
   project = _messages.StringField(2, required=True)
 
 
+class SqlInstancesTruncateLogRequest(_messages.Message):
+  """A SqlInstancesTruncateLogRequest object.
+
+  Fields:
+    instance: Cloud SQL instance ID. This does not include the project ID.
+    instancesTruncateLogRequest: A InstancesTruncateLogRequest resource to be
+      passed as the request body.
+    project: Project ID of the Cloud SQL project.
+  """
+
+  instance = _messages.StringField(1, required=True)
+  instancesTruncateLogRequest = _messages.MessageField('InstancesTruncateLogRequest', 2)
+  project = _messages.StringField(3, required=True)
+
+
 class SqlInstancesUpdateRequest(_messages.Message):
   """A SqlInstancesUpdateRequest object.
 
@@ -1490,8 +1528,7 @@ class Tier(_messages.Message):
     DiskQuota: The maximum disk size of this tier in bytes.
     RAM: The maximum RAM usage of this tier in bytes.
     kind: This is always sql#tier.
-    region: The applicable regions for this tier. Can be us-east1, europe-
-      west1 or asia-east1.
+    region: The applicable regions for this tier.
     tier: An identifier for the service tier, for example D1, D2 etc. For
       related information, see Pricing.
   """
@@ -1513,6 +1550,19 @@ class TiersListResponse(_messages.Message):
 
   items = _messages.MessageField('Tier', 1, repeated=True)
   kind = _messages.StringField(2, default=u'sql#tiersList')
+
+
+class TruncateLogContext(_messages.Message):
+  """Database Instance truncate log context.
+
+  Fields:
+    kind: This is always sql#truncateLogContext.
+    logType: The type of log to truncate. Valid values are MYSQL_GENERAL_TABLE
+      and MYSQL_SLOW_TABLE.
+  """
+
+  kind = _messages.StringField(1, default=u'sql#truncateLogContext')
+  logType = _messages.StringField(2)
 
 
 class User(_messages.Message):

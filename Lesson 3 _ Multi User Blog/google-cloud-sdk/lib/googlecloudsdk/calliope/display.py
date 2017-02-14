@@ -35,7 +35,7 @@ from googlecloudsdk.core.resource import resource_filter
 from googlecloudsdk.core.resource import resource_keys_expr
 from googlecloudsdk.core.resource import resource_lex
 from googlecloudsdk.core.resource import resource_printer
-from googlecloudsdk.core.resource import resource_projection_parser
+from googlecloudsdk.core.resource import resource_projection_spec
 from googlecloudsdk.core.resource import resource_property
 from googlecloudsdk.core.resource import resource_transform
 from googlecloudsdk.core.util import peek_iterable
@@ -53,6 +53,7 @@ class Displayer(object):
     _defaults: The resource format and filter default projection.
     _format: The printer format string.
     _info: The resource info or None if not registered.
+    _legacy: True if command uses legacy Command class methods.
     _printer: The printer object.
     _printer_is_initialized: True if self._printer has been initialized.
     _resources: The resources to display, returned by command.Run().
@@ -62,7 +63,7 @@ class Displayer(object):
   # A command with these flags might return incomplete resource lists.
   _CORRUPT_FLAGS = ('async', 'filter', 'limit')
 
-  def __init__(self, command, args, resources=None):
+  def __init__(self, command, args, resources=None, display_info=None):
     """Constructor.
 
     Args:
@@ -70,29 +71,47 @@ class Displayer(object):
       args: The argparse.Namespace given to the command.Run().
       resources: The resources to display, returned by command.Run(). May be
         omitted if only GetFormat() will be called.
+      display_info: The DisplayInfo object reaped from parser.AddDisplayInfo()
+        in the command path.
     """
     self._args = args
     self._command = command
-    self._default_format_used = False
     self._defaults = None
+    self._default_format_used = False
     self._format = None
-    self._info = command.ResourceInfo(args)
+    self._info = None
+    self._legacy = True
     self._printer = None
     self._printer_is_initialized = False
     self._resources = resources
-    self._defaults = resource_projection_parser.Parse(
-        None, defaults=command.Defaults())
+    if not display_info:
+      # pylint: disable=protected-access
+      display_info = args.GetDisplayInfo()
+    if display_info:
+      self._legacy = display_info.legacy
+      self._defaults = resource_projection_spec.ProjectionSpec(
+          defaults=self._defaults,
+          symbols=display_info.transforms,
+          aliases=display_info.aliases)
+      self._format = display_info.format
+    if self._legacy:
+      self._defaults = resource_projection_spec.ProjectionSpec(
+          defaults=command.Defaults())
+      self._info = command.ResourceInfo(args)
+      if self._info:
+        self._defaults.symbols['collection'] = (
+            lambda r, undefined='': self._info.collection or undefined)
+      geturi = command.GetUriFunc()
+      if geturi:
+        self._transform_uri = lambda r, undefined='': geturi(r) or undefined
+        self._defaults.symbols['uri'] = self._transform_uri
+      else:
+        self._transform_uri = resource_transform.TransformUri
+    else:
+      self._transform_uri = self._defaults.symbols.get(
+          'uri', resource_transform.TransformUri)
     self._defaults.symbols[
         resource_transform.GetTypeDataName('conditionals')] = args
-    if self._info:
-      self._defaults.symbols['collection'] = (
-          lambda r, undefined='': self._info.collection or undefined)
-    geturi = command.GetUriFunc()
-    if geturi:
-      self._transform_uri = lambda r, undefined='': geturi(r) or undefined
-      self._defaults.symbols['uri'] = self._transform_uri
-    else:
-      self._transform_uri = resource_transform.TransformUri
 
   def _GetFlag(self, flag_name):
     """Returns the value of flag_name in args, None if it is unknown or unset.
@@ -108,7 +127,7 @@ class Displayer(object):
   def _AddUriCacheTap(self):
     """Taps a resource Uri cache updater into self.resources if needed."""
 
-    if not self._info or self._info.bypass_cache:
+    if self._legacy and (not self._info or self._info.bypass_cache):
       return
 
     cache_update_op = self._command.GetUriCacheUpdateOp()
@@ -120,6 +139,74 @@ class Displayer(object):
 
     tap = display_taps.UriCacher(cache_update_op, self._transform_uri)
     self._resources = peek_iterable.Tapper(self._resources, tap)
+
+  def _GetSortKeys(self):
+    """Returns the list of --sort-by [(key, reverse)] tuples.
+
+    Returns:
+      The list of --sort-by [(key, reverse)] tuples, None if --sort-by was not
+      specified. The keys are ordered from highest to lowest precedence.
+    """
+    if not self._GetFlag('sort_by'):
+      return None
+    keys = []
+    for name in self._args.sort_by:
+      # ~name reverses the sort for name.
+      if name.startswith('~'):
+        name = name.lstrip('~')
+        reverse = True
+      else:
+        reverse = False
+      # Slices default to the first list element for consistency.
+      name = name.replace('[]', '[0]')
+      keys.append((resource_lex.Lexer(name).Key(), reverse))
+    return keys
+
+  def _SortResources(self, keys, reverse):
+    """_AddSortByTap helper that sorts the resources by keys.
+
+    Args:
+      keys: The ordered list of parsed resource keys from highest to lowest
+        precedence.
+      reverse: Sort by the keys in descending order if True, otherwise
+        ascending.
+    """
+    self._resources = sorted(
+        self._resources,
+        key=lambda r: [resource_property.Get(r, k) for k in keys],
+        reverse=reverse)
+
+  def _AddSortByTap(self):
+    """Sorts the resources using the --sort-by keys."""
+    if not resource_property.IsListLike(self._resources):
+      return
+    sort_keys = self._GetSortKeys()
+    if not sort_keys:
+      return
+    self._args.sort_by = None
+    # This loop partitions the keys into groups having the same reverse value.
+    # The groups are then applied in reverse order to maintain the original
+    # precedence.
+    #
+    # This is not a pure tap since, by necessity, it consumes self._resources
+    # to sort and converts it to a list.
+    groups = []  # [(group_keys, group_reverse)] LIFO to preserve precedence
+    group_keys = []  # keys for current group
+    group_reverse = False
+    for key, reverse in sort_keys:
+      if not group_keys:
+        group_reverse = reverse
+      elif group_reverse != reverse:
+        groups.insert(0, (group_keys, group_reverse))
+        group_keys = []
+        group_reverse = reverse
+      group_keys.append(key)
+    if group_keys:
+      groups.insert(0, (group_keys, group_reverse))
+
+    # Finally sort the resources by groups having the same reverse value.
+    for keys, reverse in groups:
+      self._SortResources(keys, reverse)
 
   def _AddFilterTap(self):
     """Taps a resource filter into self.resources if needed."""
@@ -179,8 +266,10 @@ class Displayer(object):
     symbols = self._info.GetTransforms()
     if not symbols and not self._info.defaults:
       return self._defaults
-    return resource_projection_parser.Parse(
-        self._info.defaults, defaults=self._defaults, symbols=symbols)
+    return resource_projection_spec.ProjectionSpec(
+        defaults=resource_projection_spec.CombineDefaults(
+            [self._info.defaults, self._defaults]),
+        symbols=symbols)
 
   def _GetExplicitFormat(self):
     """Determines the explicit format.
@@ -196,6 +285,8 @@ class Displayer(object):
     Returns:
       format: The format string, '' if there is an explicit Display().
     """
+    if not self._legacy:
+      return self._format
     if hasattr(self._command, 'Display'):
       return ''
     return self._command.Format(self._args)
@@ -235,22 +326,19 @@ class Displayer(object):
       #
       fmt = default_fmt + ' ' + fmt
 
-    if fmt and self._GetFlag('sort_by'):
-      # :(...) adds key only attributes that don't affect the projection.
-      orders = []
-      for order, name in enumerate(self._args.sort_by):
-        # ~name reverses the sort for name.
-        if name.startswith('~'):
-          name = name.lstrip('~')
-          reverse = ':reverse'
-        else:
-          reverse = ''
-        # Slices default to the first list element for consistency.
-        name = name.replace('[]', '[0]')
-        orders.append('{name}:sort={order}{reverse}'.format(
-            name=name, order=order + 1, reverse=reverse))
-      fmt += ':({orders})'.format(orders=','.join(orders))
+    if not fmt:
+      return fmt
+    sort_keys = self._GetSortKeys()
+    if not sort_keys:
+      return fmt
 
+    # :(...) adds key only attributes that don't affect the projection.
+    orders = []
+    for order, (key, reverse) in enumerate(sort_keys, start=1):
+      attr = ':reverse' if reverse else ''
+      orders.append('{name}:sort={order}{attr}'.format(
+          name=resource_lex.GetKeyName(key), order=order, attr=attr))
+    fmt += ':({orders})'.format(orders=','.join(orders))
     return fmt
 
   def _InitPrinter(self):
@@ -319,6 +407,9 @@ class Displayer(object):
 
     # Add a resource flatten tap if needed.
     self._AddFlattenTap()
+
+    # Add a sort tap if needed.
+    self._AddSortByTap()
 
     # Add a resource filter tap if needed.
     self._AddFilterTap()

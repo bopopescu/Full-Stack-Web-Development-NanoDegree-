@@ -21,7 +21,7 @@ from googlecloudsdk.core import properties
 from googlecloudsdk.core.configurations import named_configs
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
+@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.GA)
 class GetValue(base.Command):
   """Print the value of a Cloud SDK property.
 
@@ -73,7 +73,7 @@ class GetValue(base.Command):
       if not value:
         # Writing message to stderr but returning any potentially empty
         # value to caller as is
-        log.err.write('(unset)')
+        log.err.Print('(unset)')
     except properties.InvalidValueError as e:
       # Writing warning to stderr but returning invalid value as is
       log.warn(str(e))

@@ -11,7 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """Command for adding a path matcher to a URL map."""
+
+import collections
+import copy
+
 from googlecloudsdk.api_lib.compute import base_classes
 from googlecloudsdk.calliope import arg_parsers
 from googlecloudsdk.calliope import base
@@ -21,8 +26,6 @@ from googlecloudsdk.command_lib.compute.backend_buckets import (
 from googlecloudsdk.command_lib.compute.backend_services import (
     flags as backend_service_flags)
 from googlecloudsdk.command_lib.compute.url_maps import flags
-from googlecloudsdk.third_party.py27 import py27_collections as collections
-from googlecloudsdk.third_party.py27 import py27_copy as copy
 
 
 def _Args(parser):
@@ -69,7 +72,7 @@ def _Args(parser):
             'of failing.'))
 
 
-@base.ReleaseTracks(base.ReleaseTrack.GA, base.ReleaseTrack.BETA)
+@base.ReleaseTracks(base.ReleaseTrack.GA)
 class AddPathMatcherGA(base_classes.ReadWriteCommand):
   """Add a path matcher to a URL map."""
 
@@ -222,8 +225,8 @@ class AddPathMatcherGA(base_classes.ReadWriteCommand):
     return replacement
 
 
-@base.ReleaseTracks(base.ReleaseTrack.ALPHA)
-class AddPathMatcherAlpha(AddPathMatcherGA):
+@base.ReleaseTracks(base.ReleaseTrack.BETA, base.ReleaseTrack.ALPHA)
+class AddPathMatcherBeta(AddPathMatcherGA):
   """Add a path matcher to a URL map."""
 
   BACKEND_BUCKET_ARG = None
@@ -332,7 +335,7 @@ AddPathMatcherGA.detailed_help = {
         for which there is no mapping.
         """,
 }
-AddPathMatcherAlpha.detailed_help = {
+AddPathMatcherBeta.detailed_help = {
     'brief': 'Add a path matcher to a URL map',
     'DESCRIPTION': """\
         *{command}* is used to add a path matcher to a URL map. A path

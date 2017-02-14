@@ -16,11 +16,19 @@
 from googlecloudsdk.api_lib.ml import jobs
 from googlecloudsdk.calliope import base
 from googlecloudsdk.command_lib.ml import flags
+from googlecloudsdk.core import log
+from googlecloudsdk.core import properties
+from googlecloudsdk.core import resources
 
 
-@base.ReleaseTracks(base.ReleaseTrack.BETA)
 class DescribeBeta(base.DescribeCommand):
   """Describe a Cloud ML job."""
+
+  _CONSOLE_URL = ('https://console.cloud.google.com/ml/jobs/{job_id}?'
+                  'project={project}')
+  _LOGS_URL = ('https://console.cloud.google.com/logs?'
+               'resource=ml.googleapis.com%2Fjob_id%2F{job_id}'
+               '&project={project}')
 
   @staticmethod
   def Args(parser):
@@ -28,4 +36,18 @@ class DescribeBeta(base.DescribeCommand):
     flags.JOB_NAME.AddToParser(parser)
 
   def Run(self, args):
-    return jobs.Get(args.job)
+    job_ref = resources.REGISTRY.Parse(args.job, collection='ml.projects.jobs')
+    job = jobs.JobsClient().Get(job_ref)
+    self.job = job  # Hack to make the Epilog() method work.
+    return job
+
+  def Epilog(self, resources_were_displayed):
+    if resources_were_displayed:
+      job_id = self.job.jobId
+      project = properties.VALUES.core.project.Get()
+      log.status.Print(
+          '\nView job in the Cloud Console at:\n' +
+          self._CONSOLE_URL.format(job_id=job_id, project=project))
+      log.status.Print(
+          '\nView logs at:\n' +
+          self._LOGS_URL.format(job_id=job_id, project=project))

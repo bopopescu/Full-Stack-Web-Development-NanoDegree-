@@ -14,12 +14,11 @@
 
 """The `app instances disable-debug` command."""
 
-import operator
-
 from googlecloudsdk.api_lib.app import appengine_api_client
 from googlecloudsdk.api_lib.app import instances_util
+from googlecloudsdk.api_lib.app import util
 from googlecloudsdk.calliope import base
-from googlecloudsdk.command_lib.app import flags
+from googlecloudsdk.core import resources
 from googlecloudsdk.core.console import console_io
 from googlecloudsdk.core.console import progress_tracker
 
@@ -40,7 +39,7 @@ class DisableDebug(base.Command):
       'EXAMPLES': """\
           To disable debug mode for a particular instance, run:
 
-              $ {command} --service=service --version=version gae-default-v1-nwz0
+              $ {command} --service=s1 --version=v1 i1
 
           To disable debug mode for an instance chosen interactively, run:
 
@@ -50,8 +49,6 @@ class DisableDebug(base.Command):
 
   @staticmethod
   def Args(parser):
-    flags.SERVER_FLAG.AddToParser(parser)
-    flags.IGNORE_CERTS_FLAG.AddToParser(parser)
     instance = parser.add_argument(
         'instance', nargs='?',
         help=('The instance to disable debug mode on.'))
@@ -76,20 +73,32 @@ class DisableDebug(base.Command):
 
   def Run(self, args):
     api_client = appengine_api_client.GetApiClient()
-    all_instances = api_client.GetAllInstances(args.service, args.version)
-    # Only VM instances can be placed in debug mode for now.
-    all_instances = filter(operator.attrgetter('instance.vmName'),
-                           all_instances)
-    instance = instances_util.GetMatchingInstance(
-        all_instances, service=args.service, version=args.version,
-        instance=args.instance)
+    all_instances = api_client.GetAllInstances(
+        args.service, args.version,
+        version_filter=lambda v: util.Environment.IsFlexible(v.environment))
+    try:
+      res = resources.REGISTRY.Parse(args.instance)
+    except Exception:  # pylint:disable=broad-except
+      # Either the commandline argument is an instance ID, or is empty.
+      # If empty, use interactive selection to choose an instance.
+      instance = instances_util.GetMatchingInstance(
+          all_instances, service=args.service, version=args.version,
+          instance=args.instance)
+    else:
+      instance = instances_util.GetMatchingInstance(
+          all_instances, service=res.servicesId, version=res.versionsId,
+          instance=res.instancesId)
 
     console_io.PromptContinue(
         'About to disable debug mode for instance [{0}].\n\n'
         'Any local changes will be LOST. New instance(s) may spawn depending '
         'on the app\'s scaling settings.'.format(instance), cancel_on_no=True)
     message = 'Disabling debug mode for instance [{0}]'.format(instance)
+
+    res = resources.REGISTRY.Parse(instance.id,
+                                   params={'servicesId': instance.service,
+                                           'versionsId': instance.version},
+                                   collection='appengine.apps.services.'
+                                              'versions.instances')
     with progress_tracker.ProgressTracker(message):
-      api_client.DeleteInstance(service=instance.service,
-                                version=instance.version,
-                                instance=instance.id)
+      api_client.DeleteInstance(res)

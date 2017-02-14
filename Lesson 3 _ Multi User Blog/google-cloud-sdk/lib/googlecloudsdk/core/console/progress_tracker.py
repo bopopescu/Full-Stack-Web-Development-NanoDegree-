@@ -23,6 +23,7 @@ from googlecloudsdk.core.console import console_attr
 from googlecloudsdk.core.console import console_io
 
 
+# TODO(b/32656232): support ctrl-c handling.
 class ProgressTracker(object):
   """A context manager for telling the user about long-running progress."""
 
@@ -38,14 +39,18 @@ class ProgressTracker(object):
     self._message = message
     self._prefix = message + '...'
     self._ticks = 0
-    self._autotick = autotick
     self._done = False
     self._lock = threading.Lock()
     self._detail_message_callback = detail_message_callback
     self._multi_line = False
     self._last_display_message = ''
     self._tick_delay = tick_delay
-    self._is_tty = console_io.IsInteractive(output=True, error=True)
+    self._is_tty = console_io.IsInteractive(error=True)
+    self.__autotick = autotick
+
+  @property
+  def _autotick(self):
+    return self.__autotick
 
   def _GetPrefix(self):
     if self._detail_message_callback:
@@ -60,7 +65,7 @@ class ProgressTracker(object):
     if self._autotick:
       def Ticker():
         while True:
-          time.sleep(self._tick_delay)
+          _SleepSecs(self._tick_delay)
           if self.Tick():
             return
       threading.Thread(target=Ticker).start()
@@ -75,12 +80,14 @@ class ProgressTracker(object):
     Returns:
       Whether progress has completed.
     """
-    if self._is_tty:
-      with self._lock:
-        if not self._done:
+    with self._lock:
+      if not self._done:
+        if self._is_tty:
           self._ticks += 1
           self._Print(ProgressTracker.SPIN_MARKS[
               self._ticks % len(ProgressTracker.SPIN_MARKS)])
+        else:
+          sys.stderr.write('.')
     return self._done
 
   def _Print(self, message=''):
@@ -95,6 +102,14 @@ class ProgressTracker(object):
       message: str, suffix of message
     """
     display_message = self._GetPrefix()
+
+    # If we are not in a tty, _Print() is called exactly twice.  The first time
+    # it should print the prefix, the last time it should print just the 'done'
+    # message since we are not using any escape characters at all.
+    if not self._is_tty:
+      sys.stderr.write(message or display_message + '\n')
+      return
+
     console_width = console_attr.ConsoleAttr().GetTermSize()[0]
     # The whole message will fit in the current console width and the previous
     # line was not a multiline display so we can overwrite.
@@ -156,3 +171,6 @@ class ProgressTracker(object):
         return False
       self._Print('done.\n')
 
+
+def _SleepSecs(seconds):
+  time.sleep(seconds)

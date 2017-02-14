@@ -16,6 +16,7 @@
 """
 
 import abc
+from functools import wraps
 import sys
 
 from googlecloudsdk.calliope import arg_parsers
@@ -38,6 +39,10 @@ COMMONLY_USED_FLAGS = 'COMMONLY USED'
 
 class LayoutException(Exception):
   """An exception for when a command or group .py file has the wrong types."""
+
+
+class DeprecationException(Exception):
+  """An exception for when a command or group has been deprecated."""
 
 
 class ReleaseTrackNotImplementedException(Exception):
@@ -79,12 +84,7 @@ class ReleaseTrack(object):
       'ALPHA', 'alpha',
       '{0}(ALPHA){0} '.format(MARKDOWN_BOLD),
       'This command is currently in ALPHA and may change without notice.')
-  PREVIEW = _TRACK(
-      'PREVIEW', 'preview',
-      '{0}(PREVIEW){0} '.format(MARKDOWN_BOLD),
-      'This command is currently in DEVELOPER PREVIEW and may change without '
-      'notice.')
-  _ALL = [GA, BETA, ALPHA, PREVIEW]
+  _ALL = [GA, BETA, ALPHA]
 
   @staticmethod
   def AllValues():
@@ -206,8 +206,9 @@ FILTER_FLAG = Argument(
     detailed_help="""\
     Apply a Boolean filter _EXPRESSION_ to each resource item to be listed.
     If the expression evaluates True then that item is listed. For more
-    details run $ gcloud topic filters. If *--limit* is also specified
-    then it is applied after *--filter*.""")
+    details and examples of filter expressions run $ gcloud topic filters. This
+    flag interacts with other flags that are applied in this order: *--flatten*,
+    *--sort-by*, *--filter*, *--limit*.""")
 
 LIMIT_FLAG = Argument(
     '--limit',
@@ -216,7 +217,8 @@ LIMIT_FLAG = Argument(
     help='The maximum number of resources to list.',
     detailed_help="""\
     The maximum number of resources to list. The default is *unlimited*.
-    If *--filter* is also specified then it is applied before *--limit*.
+    This flag interacts with other flags that are applied in this order:
+    *--flatten*, *--sort-by*, *--filter*, *--limit*.
     """)
 
 PAGE_SIZE_FLAG = Argument(
@@ -241,7 +243,8 @@ SORT_BY_FLAG = Argument(
     detailed_help="""\
     A comma-separated list of resource field key names to sort by. The
     default order is ascending. Prefix a field with ``~'' for descending
-    order on that field.
+    order on that field. This flag interacts with other flags that are applied
+    in this order: *--flatten*, *--sort-by*, *--filter*, *--limit*.
     """)
 
 URI_FLAG = Argument(
@@ -268,6 +271,7 @@ class _Common(object):
   _is_unicode_supported = False
   _release_track = None
   _valid_release_tracks = None
+  _notices = None
 
   def __init__(self):
     self.exit_code = 0
@@ -408,6 +412,16 @@ class _Common(object):
     return cls._valid_release_tracks
 
   @classmethod
+  def Notices(cls):
+    return cls._notices
+
+  @classmethod
+  def AddNotice(cls, tag, msg):
+    if not cls._notices:
+      cls._notices = {}
+    cls._notices[tag] = msg
+
+  @classmethod
   def GetExecutionFunction(cls, *args):
     """Get a fully bound function that will call another gcloud command.
 
@@ -546,8 +560,30 @@ class Command(_Common):
       info = resource_registry.Get(info.async_collection)
     return info
 
-  def Format(self, unused_args):
-    """Returns the default format string."""
+  def Format(self, args):
+    """Returns the default format string.
+
+    Calliope supports a powerful formatting mini-language. It allows running
+    things like
+
+        $ my-tool run-foo --format=json
+        $ my-tool run-foo --format='value(bar.baz.map().qux().list())'
+        $ my-tool run-foo --format='table[box](a, b, c:label=SOME_DESCRIPTION)'
+
+    For the best current documentation on this formatting language, see
+    `gcloud topic formats` and `gcloud topic projections`.
+
+    When a command is run with no `--format` flag, this method is run and its
+    result is used as the format string.
+
+    Args:
+      args: the argparse namespace object for this command execution. Not used
+        in the default implementation, but available for subclasses to use.
+
+    Returns:
+      str, the default format string for this command.
+    """
+    del args  # Unused in Format
     return 'default'
 
   def ListFormat(self, args):
@@ -749,3 +785,71 @@ def ReleaseTracks(*tracks):
     cmd_class._valid_release_tracks = set(tracks)
     return cmd_class
   return ApplyReleaseTracks
+
+
+def Deprecate(is_removed=True,
+              warning='This command is deprecated.',
+              error='This command has been removed.'):
+  """Decorator that marks a Calliope command as deprecated.
+
+  Decorate a subclass of base.Command with this function and the
+  decorated command will be modified as follows:
+
+  - If is_removed is false, a warning will be logged when *command* is run,
+  otherwise an *exception* will be thrown containing error message
+
+  -Command help output will be modified to include warning/error message
+  depending on value of is_removed
+
+  - Command help text will automatically hidden from the reference documentation
+  (e.g. @base.Hidden) if is_removed is True
+
+
+  Args:
+      is_removed: boolean, True if the command should raise an error
+      when executed. If false, a warning is printed
+      warning: string, warning message
+      error: string, error message
+
+  Returns:
+    A modified version of the provided class.
+  """
+
+  def DeprecateCommand(cmd_class):
+    """Wrapper Function that creates actual decorated class.
+
+    Args:
+      cmd_class: base.Command or base.Group subclass to be decorated
+
+    Returns:
+      The decorated class.
+    """
+    if is_removed:
+      msg = error
+      deprecation_tag = '{0}(REMOVED){0} '.format(MARKDOWN_BOLD)
+    else:
+      msg = warning
+      deprecation_tag = '{0}(DEPRECATED){0} '.format(MARKDOWN_BOLD)
+
+    cmd_class.AddNotice(deprecation_tag, msg)
+
+    def RunDecorator(run_func):
+      @wraps(run_func)
+      def WrappedRun(*args, **kw):
+        if is_removed:
+          raise DeprecationException(error)
+        log.warn(warning)
+        run_func(*args, **kw)
+      return WrappedRun
+
+    if issubclass(cmd_class, Group):
+      cmd_class.Filter = RunDecorator(cmd_class.Filter)
+    else:
+      cmd_class.Run = RunDecorator(cmd_class.Run)
+
+    if is_removed:
+      return Hidden(cmd_class)
+
+    return cmd_class
+
+  return DeprecateCommand

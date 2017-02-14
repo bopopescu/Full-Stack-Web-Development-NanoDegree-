@@ -17,20 +17,20 @@
 
 import gzip
 import os
-import tempfile
+import StringIO
+import tarfile
 
+from apitools.base.py import encoding
 from docker import docker
-from googlecloudsdk.api_lib.app.api import operations
-from googlecloudsdk.api_lib.cloudbuild import logs as cloudbuild_logs
+from googlecloudsdk.api_lib.app import util
+from googlecloudsdk.api_lib.cloudbuild import cloudbuild_util
 from googlecloudsdk.api_lib.storage import storage_api
-from googlecloudsdk.core import apis as core_apis
 from googlecloudsdk.core import exceptions
 from googlecloudsdk.core import log
 from googlecloudsdk.core import properties
 from googlecloudsdk.core.util import files
+from googlecloudsdk.core.util import times
 
-CLOUDBUILD_SUCCESS = 'SUCCESS'
-CLOUDBUILD_LOGFILE_FMT_STRING = 'log-{build_id}.txt'
 
 # Paths that shouldn't be ignored client-side.
 # Behavioral parity with github.com/docker/docker-py.
@@ -41,177 +41,215 @@ class UploadFailedError(exceptions.Error):
   """Raised when the source fails to upload to GCS."""
 
 
-class BuildFailedError(exceptions.Error):
-  """Raised when a Google Cloud Builder build fails."""
+def _CreateTar(source_dir, gen_files, paths, gz):
+  """Create tarfile for upload to GCS.
+
+  The third-party code closes the tarfile after creating, which does not
+  allow us to write generated files after calling docker.utils.tar
+  since gzipped tarfiles can't be opened in append mode.
+
+  Args:
+    source_dir: the directory to be archived
+    gen_files: Generated files to write to the tar
+    paths: allowed paths in the tarfile
+    gz: gzipped tarfile object
+  """
+  root = os.path.abspath(source_dir)
+  t = tarfile.open(mode='w', fileobj=gz)
+  for path in sorted(paths):
+    full_path = os.path.join(root, path)
+    t.add(full_path, arcname=path, recursive=False)
+  for name, contents in gen_files.iteritems():
+    genfileobj = StringIO.StringIO(contents)
+    tar_info = tarfile.TarInfo(name=name)
+    tar_info.size = len(genfileobj.buf)
+    t.addfile(tar_info, fileobj=genfileobj)
+    genfileobj.close()
+  t.close()
 
 
-# This class is a workaround for the fact that the last line of
-# docker.utils.tar does "fileobj.seek(0)" and gzip fails to seek in write mode,
-# throwing "IOError: Negative seek in write mode".
-class _GzipFileIgnoreSeek(gzip.GzipFile):
-  """Wrapper around GzipFile that ignores seek requests."""
+def _GetDockerignoreExclusions(source_dir, gen_files):
+  """Helper function to read the .dockerignore on disk or in generated files.
 
-  def seek(self, offset, whence=0):
-    return self.offset
+  Args:
+    source_dir: the path to the root directory.
+    gen_files: dict of filename to contents of generated files.
+
+  Returns:
+    Set of exclusion expressions from the dockerignore file.
+  """
+  dockerignore = os.path.join(source_dir, '.dockerignore')
+  exclude = set()
+  ignore_contents = None
+  if os.path.exists(dockerignore):
+    with open(dockerignore) as f:
+      ignore_contents = f.read()
+  else:
+    ignore_contents = gen_files.get('.dockerignore')
+  if ignore_contents:
+    # Read the exclusions from the dockerignore, filtering out blank lines.
+    exclude = set(filter(bool, ignore_contents.splitlines()))
+    # Remove paths that shouldn't be excluded on the client.
+    exclude -= set(BLACKLISTED_DOCKERIGNORE_PATHS)
+  return exclude
 
 
-def UploadSource(source_dir, bucket, obj):
+def _GetIncludedPaths(source_dir, exclude, skip_files=None):
+  """Helper function to filter paths in root using dockerignore and skip_files.
+
+  We iterate separately to filter on skip_files in order to preserve expected
+  behavior (standard deployment skips directories if they contain only files
+  ignored by skip_files).
+
+  Args:
+    source_dir: the path to the root directory.
+    exclude: the .dockerignore file exclusions.
+    skip_files: the regex for files to skip. If None, only dockerignore is used
+        to filter.
+
+  Returns:
+    Set of paths (relative to source_dir) to include.
+  """
+  # See docker.utils.tar
+  root = os.path.abspath(source_dir)
+  # Get set of all paths other than exclusions from dockerignore.
+  paths = docker.utils.exclude_paths(root, exclude)
+  # Also filter on the ignore regex from the app.yaml.
+  if skip_files:
+    included_paths = set(util.FileIterator(source_dir, skip_files))
+    # FileIterator replaces all path separators with '/', so reformat
+    # the results to compare with the first set.
+    included_paths = {
+        p.replace('/', os.path.sep) for p in included_paths}
+    paths.intersection_update(included_paths)
+  return paths
+
+
+def UploadSource(source_dir, object_ref, gen_files=None, skip_files=None):
   """Upload a gzipped tarball of the source directory to GCS.
 
   Note: To provide parity with docker's behavior, we must respect .dockerignore.
 
   Args:
     source_dir: the directory to be archived.
-    bucket: the GCS bucket where the tarball will be stored.
-    obj: the GCS object where the tarball will be stored, in the above bucket.
+    object_ref: storage_util.ObjectReference, the Cloud Storage location to
+      upload the source tarball to.
+    gen_files: dict of filename to (str) contents of generated config and
+      source context files.
+    skip_files: optional, a parsed regex for paths and files to skip, from
+      the service yaml.
 
   Raises:
     UploadFailedError: when the source fails to upload to GCS.
   """
-  dockerignore = os.path.join(source_dir, '.dockerignore')
-  exclude = None
-  if os.path.exists(dockerignore):
-    with open(dockerignore) as f:
-      # Read the exclusions, filtering out blank lines.
-      exclude = set(filter(bool, f.read().splitlines()))
-      # Remove paths that shouldn't be excluded on the client.
-      exclude -= set(BLACKLISTED_DOCKERIGNORE_PATHS)
+  gen_files = gen_files or {}
+  dockerignore_contents = _GetDockerignoreExclusions(source_dir, gen_files)
+  included_paths = _GetIncludedPaths(source_dir,
+                                     dockerignore_contents,
+                                     skip_files)
+
   # We can't use tempfile.NamedTemporaryFile here because ... Windows.
   # See https://bugs.python.org/issue14243. There are small cleanup races
   # during process termination that will leave artifacts on the filesystem.
   # eg, CTRL-C on windows leaves both the directory and the file. Unavoidable.
   # On Posix, `kill -9` has similar behavior, but CTRL-C allows cleanup.
-  try:
-    temp_dir = tempfile.mkdtemp()
+  with files.TemporaryDirectory() as temp_dir:
     f = open(os.path.join(temp_dir, 'src.tgz'), 'w+b')
-    # We are able to leverage the source archiving code from docker-py;
-    # however, there are two wrinkles:
-    # 1) The 3P code doesn't support gzip (it's expecting a local unix socket).
-    #    So we create a GzipFile object and let the 3P code write into that.
-    # 2) The .seek(0) call at the end of the 3P code causes GzipFile to throw an
-    #    exception. So we use GzipFileIgnoreSeek as a workaround.
-    with _GzipFileIgnoreSeek(mode='wb', fileobj=f) as gz:
-      docker.utils.tar(source_dir, exclude, fileobj=gz)
+    with gzip.GzipFile(mode='wb', fileobj=f) as gz:
+      _CreateTar(source_dir, gen_files, included_paths, gz)
     f.close()
     storage_client = storage_api.StorageClient()
-    storage_client.CopyFileToGCS(bucket, f.name, obj)
-  finally:
+    storage_client.CopyFileToGCS(object_ref.bucket_ref, f.name, object_ref.name)
+
+
+def GetServiceTimeoutString(timeout_property_str):
+  if timeout_property_str is not None:
     try:
-      files.RmTree(temp_dir)
-    except OSError:
-      log.warn('Could not remove temporary directory [{0}]'.format(temp_dir))
+      # A bare number is interpreted as seconds.
+      build_timeout_secs = int(timeout_property_str)
+    except ValueError:
+      build_timeout_duration = times.ParseDuration(timeout_property_str)
+      build_timeout_secs = int(build_timeout_duration.total_seconds)
+    return str(build_timeout_secs) + 's'
+  return None
 
 
-def ExecuteCloudBuild(project, bucket_ref, object_name, output_image):
-  """Execute a call to CloudBuild service and wait for it to finish.
+class InvalidBuildError(ValueError):
+  """Error indicating that ExecuteCloudBuild was given a bad Build message."""
 
-  Args:
-    project: the cloud project ID.
-    bucket_ref: Reference to GCS bucket containing source to build.
-    object_name: GCS object name containing source to build.
-    output_image: GCR location for the output docker image;
-                  eg, gcr.io/test-gae/hardcoded-output-tag.
-
-  Raises:
-    BuildFailedError: when the build fails.
-  """
-  builder = properties.VALUES.app.container_builder_image.Get()
-  log.debug('Using builder image: [{0}]'.format(builder))
-  logs_bucket = bucket_ref.bucket
-
-  cloud_build_timeout = properties.VALUES.app.cloud_build_timeout.Get()
-  if cloud_build_timeout is not None:
-    timeout_str = cloud_build_timeout + 's'
-  else:
-    timeout_str = None
-
-  cloudbuild_client = core_apis.GetClientInstance('cloudbuild', 'v1')
-  cloudbuild_messages = core_apis.GetMessagesModule('cloudbuild', 'v1')
-
-  build_op = cloudbuild_client.projects_builds.Create(
-      cloudbuild_messages.CloudbuildProjectsBuildsCreateRequest(
-          projectId=project,
-          build=cloudbuild_messages.Build(
-              timeout=timeout_str,
-              source=cloudbuild_messages.Source(
-                  storageSource=cloudbuild_messages.StorageSource(
-                      bucket=bucket_ref.bucket,
-                      object=object_name,
-                  ),
-              ),
-              steps=[cloudbuild_messages.BuildStep(
-                  name=builder,
-                  args=['build', '-t', output_image, '.']
-              )],
-              images=[output_image],
-              logsBucket=logs_bucket,
-          ),
-      )
-  )
-  # Find build ID from operation metadata and print the logs URL.
-  build_id = None
-  logs_uri = None
-  if build_op.metadata is not None:
-    for prop in build_op.metadata.additionalProperties:
-      if prop.key == 'build':
-        for build_prop in prop.value.object_value.properties:
-          if build_prop.key == 'id':
-            build_id = build_prop.value.string_value
-            if logs_uri is not None:
-              break
-          if build_prop.key == 'logUrl':
-            logs_uri = build_prop.value.string_value
-            if build_id is not None:
-              break
-        break
-
-  if build_id is None:
-    raise BuildFailedError('Could not determine build ID')
-  log.status.Print(
-      'Started cloud build [{build_id}].'.format(build_id=build_id))
-  log_object = CLOUDBUILD_LOGFILE_FMT_STRING.format(build_id=build_id)
-  log_tailer = cloudbuild_logs.LogTailer(
-      bucket=logs_bucket,
-      obj=log_object)
-  log_loc = None
-  if logs_uri:
-    log.status.Print('To see logs in the Cloud Console: ' + logs_uri)
-    log_loc = 'at ' + logs_uri
-  else:
-    log.status.Print('Logs can be found in the Cloud Console.')
-    log_loc = 'in the Cloud Console.'
-  op = operations.WaitForOperation(
-      operation_service=cloudbuild_client.operations,
-      operation=build_op,
-      retry_interval=1,
-      max_retries=60 * 60,
-      retry_callback=log_tailer.Poll)
-  # Poll the logs one final time to ensure we have everything. We know this
-  # final poll will get the full log contents because GCS is strongly consistent
-  # and Container Builder waits for logs to finish pushing before marking the
-  # build complete.
-  log_tailer.Poll(is_last=True)
-  final_status = _GetStatusFromOp(op)
-  if final_status != CLOUDBUILD_SUCCESS:
-    raise BuildFailedError('Cloud build failed with status '
-                           + final_status + '. Check logs ' + log_loc)
+  def __init__(self, field):
+    super(InvalidBuildError, self).__init__(
+        'Field [{}] was provided, but should not have been. '
+        'You may be using an improper Cloud Build pipeline.'.format(field))
 
 
-def _GetStatusFromOp(op):
-  """Get the Cloud Build Status from an Operation object.
+def _ValidateBuildFields(build, fields):
+  """Validates that a Build message doesn't have fields that we populate."""
+  for field in fields:
+    if getattr(build, field, None) is not None:
+      raise InvalidBuildError(field)
 
-  The op.response field is supposed to have a copy of the build object; however,
-  the wire JSON from the server doesn't get deserialized into an actual build
-  object. Instead, it is stored as a generic ResponseValue object, so we have
-  to root around a bit.
+
+def GetDefaultBuild(output_image):
+  """Get the default build for this runtime.
+
+  This build just uses the latest docker builder image (location pulled from the
+  app/container_builder_image property) to run a `docker build` with the given
+  tag.
 
   Args:
-    op: the Operation object from a CloudBuild build request.
+    output_image: GCR location for the output docker image (e.g.
+      `gcr.io/test-gae/hardcoded-output-tag`)
 
   Returns:
-    string status, likely "SUCCESS" or "ERROR".
+    Build, a CloudBuild Build message with the given steps (ready to be given to
+      FixUpBuild).
   """
-  for prop in op.response.additionalProperties:
-    if prop.key == 'status':
-      return prop.value.string_value
-  return 'UNKNOWN'
+  messages = cloudbuild_util.GetMessagesModule()
+  builder = properties.VALUES.app.container_builder_image.Get()
+  log.debug('Using builder image: [{0}]'.format(builder))
+  return messages.Build(
+      steps=[messages.BuildStep(name=builder,
+                                args=['build', '-t', output_image, '.'])],
+      images=[output_image])
+
+
+def FixUpBuild(build, object_ref):
+  """Return a modified Build object with run-time values populated.
+
+  Specifically:
+  - `source` is pulled from the given object_ref
+  - `timeout` comes from the app/cloud_build_timeout property
+  - `logsBucket` uses the bucket from object_ref
+
+  Args:
+    build: cloudbuild Build message. The Build to modify. Fields 'timeout',
+      'source', and 'logsBucket' will be added and may not be given.
+    object_ref: storage_util.ObjectReference, the Cloud Storage location of the
+      source tarball.
+
+  Returns:
+    Build, (copy) of the given Build message with the specified fields
+      populated.
+
+  Raises:
+    InvalidBuildError: if the Build message had one of the fields this function
+      sets pre-populated
+  """
+  messages = cloudbuild_util.GetMessagesModule()
+  # Make a copy, so we don't modify the original
+  build = encoding.CopyProtoMessage(build)
+  # Check that nothing we're expecting to fill in has been set already
+  _ValidateBuildFields(build, ('source', 'timeout', 'logsBucket'))
+
+  build.timeout = GetServiceTimeoutString(
+      properties.VALUES.app.cloud_build_timeout.Get())
+  build.logsBucket = object_ref.bucket
+  build.source = messages.Source(
+      storageSource=messages.StorageSource(
+          bucket=object_ref.bucket,
+          object=object_ref.name,
+      ),
+  )
+
+  return build

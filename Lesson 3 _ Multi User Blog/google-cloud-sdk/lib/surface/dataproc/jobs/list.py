@@ -15,10 +15,12 @@
 """List job command."""
 
 from apitools.base.py import encoding
+from apitools.base.py import list_pager
 
+from googlecloudsdk.api_lib.dataproc import constants
+from googlecloudsdk.api_lib.dataproc import exceptions
 from googlecloudsdk.api_lib.dataproc import util
 from googlecloudsdk.calliope import base
-from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.core import properties
 
 
@@ -43,25 +45,36 @@ class TypedJob(util.Bunch):
     raise AttributeError('Job has no job type')
 
 
+@base.ReleaseTracks(base.ReleaseTrack.GA)
 class List(base.ListCommand):
-  """List all jobs in a project."""
+  """List jobs in a project.
 
-  detailed_help = {
-      'DESCRIPTION': '{description}',
-      'EXAMPLES': """\
-          To see the list of all jobs, run:
+  List jobs in a project. An optional filter can be used to constrain the jobs
+  returned. Filters are case-sensitive and have the following syntax:
 
-            $ {command}
+    [field = value] AND [field [= value]] ...
 
-          To see the list of all active jobs in a cluster, run:
+  where `field` is `status.state` or `labels.[KEY]`, and `[KEY]` is a label
+  key. `value` can be ```*``` to match all values. `status.state` can be either
+  `ACTIVE` or `INACTIVE`. Only the logical `AND` operator is supported;
+  space-separated items are treated as having an implicit `AND` operator.
 
-            $ {command} --state-filter active --cluster my_cluster
-          """,
-  }
+  ## EXAMPLES
+
+  To see the list of all jobs, run:
+
+    $ {command}
+
+  To see a list of all active jobs in cluster `my_cluster` with a label of
+  `env=staging`, run:
+
+    $ {command} --filter='status.state = ACTIVE AND placement.clusterName = my_cluster AND labels.env = staging'
+  """
 
   @staticmethod
   def Args(parser):
     base.URI_FLAG.RemoveFromParser(parser)
+    base.PAGE_SIZE_FLAG.SetDefault(parser, constants.DEFAULT_PAGE_SIZE)
 
     parser.add_argument(
         '--cluster',
@@ -81,8 +94,7 @@ class List(base.ListCommand):
 
     project = properties.VALUES.core.project.Get(required=True)
     region = self.context['dataproc_region']
-    request = messages.DataprocProjectsRegionsJobsListRequest(
-        projectId=project, region=region)
+    request = self.GetRequest(messages, project, region, args)
 
     if args.cluster:
       request.clusterName = args.cluster
@@ -97,8 +109,52 @@ class List(base.ListCommand):
             messages.DataprocProjectsRegionsJobsListRequest
             .JobStateMatcherValueValuesEnum.NON_ACTIVE)
       else:
-        raise exceptions.ToolException(
+        raise exceptions.ArgumentError(
             'Invalid state-filter; [{0}].'.format(args.state_filter))
 
-    response = client.projects_regions_jobs.List(request)
-    return [TypedJob(job) for job in response.jobs]
+    jobs = list_pager.YieldFromList(
+        client.projects_regions_jobs,
+        request,
+        limit=args.limit, field='jobs',
+        batch_size=args.page_size,
+        batch_size_attribute='pageSize')
+    return (TypedJob(job) for job in jobs)
+
+  @staticmethod
+  def GetRequest(messages, project, region, args):
+    return messages.DataprocProjectsRegionsJobsListRequest(
+        projectId=project, region=region)
+
+
+@base.ReleaseTracks(base.ReleaseTrack.ALPHA, base.ReleaseTrack.BETA)
+class ListBeta(List):
+  """List jobs in a project.
+
+  List jobs in a project.
+
+  ## EXAMPLES
+
+  To see the list of all jobs, run:
+
+    $ {command}
+
+  To see the list of all active jobs in a cluster, run:
+
+    $ {command} --state-filter active --cluster my_cluster
+
+  To see the list of all jobs with particular labels, run:
+
+    $ {command} --filter='labels.env = staging AND labels.starred'
+  """
+
+  @staticmethod
+  def GetRequest(messages, project, region, args):
+    # Explicitly null out args.filter if present because by default args.filter
+    # also acts as a postfilter to the things coming back from the backend
+    backend_filter = None
+    if args.filter:
+      backend_filter = args.filter
+      args.filter = None
+
+    return messages.DataprocProjectsRegionsJobsListRequest(
+        projectId=project, region=region, filter=backend_filter)

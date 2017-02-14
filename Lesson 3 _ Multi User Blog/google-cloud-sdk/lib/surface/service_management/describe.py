@@ -14,12 +14,13 @@
 
 """service-management describe command."""
 
-from googlecloudsdk.api_lib.service_management import base_classes
-from googlecloudsdk.api_lib.service_management import common_flags
+from googlecloudsdk.api_lib.service_management import services_util
 from googlecloudsdk.calliope import base
+from googlecloudsdk.command_lib.service_management import arg_parsers
+from googlecloudsdk.command_lib.service_management import common_flags
 
 
-class Describe(base.DescribeCommand, base_classes.BaseServiceManagementCommand):
+class Describe(base.DescribeCommand):
   """Describes a service given a service name."""
 
   @staticmethod
@@ -31,7 +32,7 @@ class Describe(base.DescribeCommand, base_classes.BaseServiceManagementCommand):
           on the command line after this command. Positional arguments are
           allowed.
     """
-    common_flags.service_flag(suffix='to describe').AddToParser(parser)
+    common_flags.producer_service_flag(suffix='to describe').AddToParser(parser)
 
   def Run(self, args):
     """Run 'service-management describe'.
@@ -43,8 +44,15 @@ class Describe(base.DescribeCommand, base_classes.BaseServiceManagementCommand):
     Returns:
       The response from the Get API call.
     """
-    request = self.services_messages.ServicemanagementServicesGetRequest(
-        serviceName=args.service,
-    )
+    messages = services_util.GetMessagesModule()
+    client = services_util.GetClientInstance()
 
-    return self.services_client.services.Get(request)
+    service = arg_parsers.GetServiceNameFromArg(args.service)
+
+    request = messages.ServicemanagementServicesGetRequest(
+        serviceName=service,)
+
+    return client.services.Get(request)
+
+  def Collection(self):
+    return services_util.SERVICES_COLLECTION

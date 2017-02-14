@@ -38,6 +38,15 @@ from googlecloudsdk.core.document_renderers import renderer
 from googlecloudsdk.core.document_renderers import text_renderer
 
 
+STYLES = {
+    'devsite': devsite_renderer.DevSiteRenderer,
+    'html': html_renderer.HTMLRenderer,
+    'man': man_renderer.ManRenderer,
+    'markdown': markdown_renderer.MarkdownRenderer,
+    'text': text_renderer.TextRenderer
+}
+
+
 def _GetNestedGroup(buf, i, beg, end):
   """Returns the index in buf of the end of the nested beg...end group.
 
@@ -76,7 +85,7 @@ class DocumentStyleError(exceptions.Error):
   def __init__(self, style):
     message = ('Unknown markdown document style [{style}] -- must be one of:'
                ' {styles}.'.format(style=style,
-                                   styles=', '.join(sorted(_STYLES.keys()))))
+                                   styles=', '.join(sorted(STYLES.keys()))))
     super(DocumentStyleError, self).__init__(message)
 
 
@@ -288,7 +297,8 @@ class _MarkdownConverter(object):
             # Doubled markers are literal.
             c += c
             i += 1
-          elif c == '*' and l in ' /' and r in ' ./' or l in ' /' and r in ' .':
+          elif (c == '*' and l in ' /' and r in ' ./' or
+                c != '`' and l in ' /' and r in ' .'):
             # Path-like glob patterns are literal.
             pass
           elif l.isalnum() and r.isalnum():
@@ -519,8 +529,10 @@ class _MarkdownConverter(object):
   def _ConvertDefinitionList(self, i):
     """Detects and converts a definition list item markdown line.
 
-         level-1::
-         level-2:::
+         [item-level-1]:: [definition-line]
+         [definition-lines]
+         [item-level-2]::: [definition-line]
+         [definition-lines]
 
     Args:
       i: The current character index in self._line.
@@ -538,6 +550,12 @@ class _MarkdownConverter(object):
     while i < len(self._line) and self._line[i] == ':':
       i += 1
       level += 1
+    while i < len(self._line) and self._line[i].isspace():
+      i += 1
+    end = i >= len(self._line) and not index_at_definition_markdown
+    if end:
+      # Bare ^:::$ is end of list which pops to previous list level.
+      level -= 1
     if (self._lists[self._depth].bullet or
         self._lists[self._depth].level < level):
       self._depth += 1
@@ -546,14 +564,17 @@ class _MarkdownConverter(object):
     else:
       while self._lists[self._depth].level > level:
         self._depth -= 1
-    self._lists[self._depth].bullet = False
-    self._lists[self._depth].ignore_line = 2
-    self._lists[self._depth].level = level
-    while i < len(self._line) and self._line[i] == ' ':
-      i += 1
     self._Fill()
-    self._buf = self._line[:index_at_definition_markdown]
-    self._renderer.List(self._depth, self._Attributes())
+    if end:
+      i = len(self._line)
+      definition = None
+    else:
+      self._lists[self._depth].bullet = False
+      self._lists[self._depth].ignore_line = 2
+      self._lists[self._depth].level = level
+      self._buf = self._line[:index_at_definition_markdown]
+      definition = self._Attributes()
+    self._renderer.List(level, definition=definition, end=end)
     if i < len(self._line):
       self._buf += self._line[i:]
     return -1
@@ -709,19 +730,12 @@ class _MarkdownConverter(object):
     self._Finish()
 
 
-_STYLES = {'devsite': devsite_renderer.DevSiteRenderer,
-           'html': html_renderer.HTMLRenderer,
-           'man': man_renderer.ManRenderer,
-           'markdown': markdown_renderer.MarkdownRenderer,
-           'text': text_renderer.TextRenderer}
-
-
 def RenderDocument(style='text', fin=None, out=None, width=80, notes=None,
                    title=None):
   """Renders markdown to a selected document style.
 
   Args:
-    style: The rendered document style name, must be one of the _STYLES keys.
+    style: The rendered document style name, must be one of the STYLES keys.
     fin: The input stream containing the markdown.
     out: The output stream for the rendered document.
     width: The page width in characters.
@@ -731,17 +745,15 @@ def RenderDocument(style='text', fin=None, out=None, width=80, notes=None,
   Raises:
     DocumentStyleError: The markdown style was unknown.
   """
-  if style not in _STYLES:
+  if style not in STYLES:
     raise DocumentStyleError(style)
-  style_renderer = _STYLES[style](out=out or sys.stdout, title=title,
-                                  width=width)
+  style_renderer = STYLES[style](out=out or sys.stdout, title=title,
+                                 width=width)
   _MarkdownConverter(style_renderer, fin=fin or sys.stdin, notes=notes).Run()
 
 
 def main(argv):
   """Standalone markdown document renderer."""
-
-  styles = sorted(_STYLES.keys())
 
   parser = argparse.ArgumentParser(
       description='Renders markdown on the standard input into a document on '
@@ -756,10 +768,9 @@ def main(argv):
   parser.add_argument(
       '--style',
       metavar='STYLE',
-      choices=styles,
+      choices=sorted(STYLES.keys()),
       default='text',
-      help='The output style. Must be one of {styles}. The default is '
-      'text.'.format(styles=styles))
+      help='The output style.')
 
   parser.add_argument(
       '--title',

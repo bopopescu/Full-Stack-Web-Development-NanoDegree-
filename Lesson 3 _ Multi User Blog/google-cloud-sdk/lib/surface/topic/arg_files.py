@@ -64,10 +64,6 @@ class TestingArgFiles(base.TopicCommand):
 
             device-ids: Nexus9
 
-          Note that while the command-line flags support both singular and
-          plural forms of each list-style argument (e.g. either --device-id
-          or --device-ids), argument files only support the plural forms.
-
           Composition
 
           A special *include: [_ARG_GROUP1_, ...]* syntax allows merging or
@@ -154,7 +150,7 @@ class TestingArgFiles(base.TopicCommand):
           but substituting a sampling of three physical Android devices
           instead of the single virtual Nexus6 device, run:
 
-            $ gcloud beta test android run excelsior2.args:unit-tests --device-ids shamu,m7,g3
+            $ gcloud beta test android run excelsior_args.yaml:unit-tests --device-ids shamu,htc_m8,g3
 
           In the last example, the --device-ids argument on the
           command line overrides the device-ids: specification inside the

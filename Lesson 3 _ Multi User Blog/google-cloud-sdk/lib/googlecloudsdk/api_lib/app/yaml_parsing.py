@@ -14,6 +14,7 @@
 
 """Module to parse .yaml files for an appengine app."""
 
+import collections
 import os
 
 from googlecloudsdk.api_lib.app import util
@@ -38,6 +39,21 @@ HINT_PROJECT = ('Project name should instead be specified either by '
 HINT_VERSION = ('Versions are generated automatically by default but can also '
                 'be manually specified by setting the `--version` flag on '
                 'individual command executions.')
+
+# This is the equivalent of the following in app.yaml:
+# skip_files:
+# - ^(.*/)?#.*#$
+# - ^(.*/)?.*~$
+# - ^(.*/)?.*\.py[co]$
+# - ^(.*/)?.*/RCS/.*$
+# - ^(.*/)?.git(ignore|/.*)$
+# - ^(.*/)?node_modules/.*
+DEFAULT_SKIP_FILES_FLEX = (r'^(.*/)?#.*#$|'
+                           r'^(.*/)?.*~$|'
+                           r'^(.*/)?.*\.py[co]$|'
+                           r'^(.*/)?.*/RCS/.*$|'
+                           r'^(.*/)?.git(ignore|/.*)$|'
+                           r'^(.*/)?node_modules/.*$')
 
 
 class Error(exceptions.Error):
@@ -182,10 +198,17 @@ class ServiceYamlInfo(_YamlInfo):
     super(ServiceYamlInfo, self).__init__(file_path, parsed)
     self.module = parsed.module
 
+    if util.IsFlex(parsed.env):
+      self.env = util.Environment.FLEX
+    elif parsed.vm or parsed.runtime == 'vm':
+      self.env = util.Environment.MANAGED_VMS
+    else:
+      self.env = util.Environment.STANDARD
+
     # All env: 2 apps are hermetic. All vm: false apps are not hermetic except
     # for those with (explicit) env: 1 and runtime: custom. vm: true apps are
     # hermetic IFF they don't use static files.
-    if util.IsFlex(parsed.env):
+    if self.env is util.Environment.FLEX:
       self.is_hermetic = True
     elif util.IsStandard(parsed.env):
       self.is_hermetic = parsed.runtime == 'custom'
@@ -199,15 +222,14 @@ class ServiceYamlInfo(_YamlInfo):
     else:
       self.is_hermetic = False
 
-    if util.IsStandard(parsed.env) and self.is_hermetic:
-      self.env = util.Environment.STANDARD
+    self._UpdateSkipFiles(file_path, parsed)
+
+    if self.env is util.Environment.STANDARD and self.is_hermetic:
       self.runtime = parsed.runtime
-    elif parsed.runtime == 'vm' or self.is_hermetic:
-      self.env = util.Environment.FLEXIBLE
+    elif (self.env is util.Environment.MANAGED_VMS) or self.is_hermetic:
       self.runtime = parsed.GetEffectiveRuntime()
-      self._UpdateManagedVMConfig()
+      self._UpdateVMSettings()
     else:
-      self.env = util.Environment.STANDARD
       self.runtime = parsed.runtime
 
   @staticmethod
@@ -247,7 +269,7 @@ class ServiceYamlInfo(_YamlInfo):
 
     if util.IsFlex(parsed.env) and vm_runtime == 'python27':
       raise YamlValidationError(
-          'The "python27" is not a valid runtime in env: 2.  '
+          'The "python27" is not a valid runtime in env: flex.  '
           'Please use [python-compat] instead.')
 
     if parsed.module:
@@ -274,28 +296,42 @@ class ServiceYamlInfo(_YamlInfo):
 
   def RequiresImage(self):
     """Returns True if we'll need to build a docker image."""
-    return self.env is util.Environment.FLEXIBLE or self.is_hermetic
+    return self.env is util.Environment.MANAGED_VMS or self.is_hermetic
 
-  def _UpdateManagedVMConfig(self):
-    """Overwrites vm_settings for App Engine Flexible services.
-
-    Sets has_docker_image to be always True. Required for transition period
-    until all images in production are pushed via gcloud (and therefore all
-    builds happen locally in the SDK).
+  def _UpdateVMSettings(self):
+    """Overwrites vm_settings for App Engine services with VMs.
 
     Also sets module_yaml_path which is needed for some runtimes.
 
     Raises:
-      AppConfigError: if the function was called for the service which is not an
-        App Engine Flexible service.
+      AppConfigError: if the function was called for a standard service
     """
-    if self.env is not util.Environment.FLEXIBLE:
-      raise AppConfigError('This is not an App Engine Flexible service. '
-                           'The `vm` field is not set to `true`.')
+    if self.env not in [util.Environment.MANAGED_VMS, util.Environment.FLEX]:
+      raise AppConfigError(
+          'This is not an App Engine Flexible service. Please set `env` '
+          'field to `flex`.')
     if not self.parsed.vm_settings:
       self.parsed.vm_settings = appinfo.VmSettings()
-    self.parsed.vm_settings['has_docker_image'] = True
+
     self.parsed.vm_settings['module_yaml_path'] = os.path.basename(self.file)
+
+  def _UpdateSkipFiles(self, file_path, parsed):
+    """Resets skip_files field to Flex default if applicable."""
+    if self.RequiresImage():
+      if parsed.skip_files == appinfo.DEFAULT_SKIP_FILES:
+        # Make sure that this was actually a default, not from the file.
+        try:
+          with open(file_path, 'r') as readfile:
+            contents = readfile.read()
+        except IOError:  # If the class was initiated with a non-existent file
+          contents = ''
+        if 'skip_files' not in contents:
+          # pylint:disable=protected-access
+          parsed.skip_files = validation._RegexStrValue(
+              validation.Regex(DEFAULT_SKIP_FILES_FLEX),
+              DEFAULT_SKIP_FILES_FLEX,
+              'skip_files')
+          # pylint:enable=protected-access
 
 
 def _CheckIllegalAttribute(name, yaml_info, extractor_func, file_path, msg=''):
@@ -340,7 +376,7 @@ class AppConfigSet(object):
       YamlParserError: If a file fails to parse.
     """
     self.__config_yamls = {}
-    self.__service_yamls = {}
+    self.__service_yamls = collections.OrderedDict()
     self.__error = False
 
     for f in files:
@@ -370,7 +406,7 @@ class AppConfigSet(object):
     Returns:
       {str, ServiceYamlInfo}, A mapping of service name to definition.
     """
-    return dict(self.__service_yamls)
+    return collections.OrderedDict(self.__service_yamls)
 
   def HermeticServices(self):
     """Gets the hermetic services that were found.

@@ -27,6 +27,8 @@ from googlecloudsdk.api_lib.test import results_bucket
 from googlecloudsdk.api_lib.test import results_summary
 from googlecloudsdk.api_lib.test import tool_results
 from googlecloudsdk.api_lib.test import util
+from googlecloudsdk.api_lib.test.android import arg_manager
+from googlecloudsdk.api_lib.test.android import matrix_creator
 from googlecloudsdk.calliope import base
 from googlecloudsdk.core import log
 
@@ -34,19 +36,21 @@ from googlecloudsdk.core import log
 @base.UnicodeIsSupported
 @base.ReleaseTracks(base.ReleaseTrack.ALPHA, base.ReleaseTrack.BETA)
 class Run(base.ListCommand):
-  """Invoke an Android test in Google Cloud Test Lab and view test results."""
+  """Invoke a test in Firebase Test Lab for Android and view test results."""
 
   detailed_help = {
       'DESCRIPTION': """\
-          *{command}* invokes and monitors tests in Google Cloud Test Lab.
+          *{command}* invokes and monitors tests in Firebase Test Lab for
+          Android.
 
           Three main types of tests are currently supported:
           - *robo*: runs a smart, automated exploration of the activities in
             your Android app which records any installation failures or crashes
             and builds an activity map with associated screenshots and video.
           - *instrumentation*: runs automated unit or integration tests written
-            using a testing framework. Google Cloud Test Lab initially supports
-            the Espresso and Robotium testing frameworks for Android.
+            using a testing framework. Firebase Test Lab for Android currently
+            supports the Espresso, Robotium and UI Automator 2.0 testing
+            frameworks.
 
           The type of test to run can be specified with the *--type* flag,
           although the type can often be inferred from other flags.
@@ -68,13 +72,13 @@ class Run(base.ListCommand):
           To invoke a robo test against a virtual Nexus9 device in
           landscape orientation, run:
 
-            $ {command} --app APP_APK --device-id Nexus9 --orientation landscape
+            $ {command} --app APP_APK --device-ids Nexus9 --orientations landscape
 
           To invoke an instrumentation test (Espresso or Robotium) against a
           physical Nexus 4 device (DEVICE_ID: mako) which is running Android API
           level 18 in French, run:
 
-            $ {command} --app APP_APK --test TEST_APK --device-id mako --os-version-id 18 --locale fr --orientation portrait
+            $ {command} --app APP_APK --test TEST_APK --device-ids mako --os-version-ids 18 --locales fr --orientations portrait
 
           To run the same test as above using short flags, run:
 
@@ -117,13 +121,11 @@ class Run(base.ListCommand):
           command in the CLI. Positional arguments are allowed.
     """
     arg_util.AddCommonTestRunArgs(parser)
-    arg_util.AddSharedCommandArgs(parser)
     arg_util.AddMatrixArgs(parser)
-    arg_util.AddInstrumentationTestArgs(parser)
-    arg_util.AddRoboTestArgs(parser)
+    arg_util.AddAndroidTestArgs(parser)
 
   def Run(self, args):
-    """Run the 'gcloud test run' command to invoke a Google Cloud Test Lab test.
+    """Run the 'gcloud test run' command to invoke a test in Firebase Test Lab.
 
     Args:
       args: an argparse namespace. All the arguments that were provided to this
@@ -134,7 +136,8 @@ class Run(base.ListCommand):
         - a list of TestOutcome tuples (if ToolResults are available).
         - a URL string pointing to the user's results in ToolResults or GCS.
     """
-    arg_util.Prepare(args, util.GetAndroidCatalog(self.context))
+    device_catalog = util.GetAndroidCatalog(self.context)
+    arg_manager.AndroidArgsManager(device_catalog).Prepare(args)
 
     project = util.GetProject()
     tr_client = self.context['toolresults_client']
@@ -153,8 +156,10 @@ class Run(base.ListCommand):
 
     tr_history_picker = history_picker.ToolResultsHistoryPicker(
         project, tr_client, tr_messages)
-    history_id = tr_history_picker.FindToolResultsHistoryId(args)
-    matrix = matrix_ops.CreateMatrix(
+    history_name = PickHistoryName(args)
+    history_id = tr_history_picker.GetToolResultsHistoryId(history_name)
+
+    matrix = matrix_creator.CreateMatrix(
         args, self.context, history_id, bucket_ops.gcs_results_root)
     monitor = matrix_ops.MatrixMonitor(
         matrix.testMatrixId, args.type, self.context)
@@ -209,3 +214,27 @@ def _UniqueGcsObjectName():
   """
   return '{0}_{1}'.format(datetime.datetime.now().isoformat('_'),
                           ''.join(random.sample(string.letters, 4)))
+
+
+def PickHistoryName(args):
+  """Returns the results history name to use to look up a history ID.
+
+  The history ID corresponds to a history name. If the user provides their
+  own history name, we use that to look up the history ID; If not, but the user
+  provides an app-package name, we use the app-package name with ' (gcloud)'
+  appended as the history name. Otherwise, we punt and let the Testing service
+  determine the appropriate history ID to publish to.
+
+  Args:
+    args: an argparse namespace. All the arguments that were provided to the
+      command invocation (i.e. group and command arguments combined).
+
+  Returns:
+    Either a string containing a history name derived from user-supplied data,
+    or None if we lack the required information.
+  """
+  if args.results_history_name:
+    return args.results_history_name
+  if args.app_package:
+    return args.app_package + ' (gcloud)'
+  return None

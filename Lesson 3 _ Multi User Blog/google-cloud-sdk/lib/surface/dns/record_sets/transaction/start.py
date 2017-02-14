@@ -26,7 +26,6 @@ from googlecloudsdk.calliope import base
 from googlecloudsdk.calliope import exceptions
 from googlecloudsdk.core import log
 from googlecloudsdk.core import properties
-from googlecloudsdk.core.util import files
 
 
 class Start(base.Command):
@@ -61,7 +60,10 @@ class Start(base.Command):
     # Get the managed-zone.
     zone_ref = resources.Parse(args.zone, collection='dns.managedZones')
     try:
-      zone = dns.managedZones.Get(zone_ref.Request())
+      zone = dns.managedZones.Get(
+          dns.MESSAGES_MODULE.DnsManagedZonesGetRequest(
+              project=zone_ref.project,
+              managedZone=zone_ref.managedZone))
     except apitools_exceptions.HttpError as error:
       raise exceptions.HttpException(error)
 
@@ -83,7 +85,7 @@ class Start(base.Command):
 
     # Write change to transaction file
     try:
-      with files.Context(open(args.transaction_file, 'w')) as transaction_file:
+      with open(args.transaction_file, 'w') as transaction_file:
         transaction_util.WriteToYamlFile(transaction_file, change)
     except Exception as exp:
       msg = 'unable to write transaction [{0}] because [{1}]'

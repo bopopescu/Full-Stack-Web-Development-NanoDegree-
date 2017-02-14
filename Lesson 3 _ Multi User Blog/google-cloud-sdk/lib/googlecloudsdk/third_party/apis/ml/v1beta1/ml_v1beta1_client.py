@@ -51,7 +51,7 @@ class MlV1beta1(base_api.BaseApiClient):
           }
 
     def Cancel(self, request, global_params=None):
-      """Cancel a running job.
+      """Cancels a running job.
 
       Args:
         request: (MlProjectsJobsCancelRequest) input message
@@ -64,12 +64,13 @@ class MlV1beta1(base_api.BaseApiClient):
           config, request, global_params=global_params)
 
     Cancel.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/jobs/{jobsId}:cancel',
         http_method=u'POST',
         method_id=u'ml.projects.jobs.cancel',
-        ordered_params=[u'projectsId', u'jobsId'],
-        path_params=[u'jobsId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/jobs/{jobsId}:cancel',
+        relative_path=u'v1beta1/{+name}:cancel',
         request_field=u'googleCloudMlV1beta1CancelJobRequest',
         request_type_name=u'MlProjectsJobsCancelRequest',
         response_type_name=u'GoogleProtobufEmpty',
@@ -77,7 +78,7 @@ class MlV1beta1(base_api.BaseApiClient):
     )
 
     def Create(self, request, global_params=None):
-      """Create a training or a batch prediction job.
+      """Creates a training or a batch prediction job.
 
       Args:
         request: (MlProjectsJobsCreateRequest) input message
@@ -90,12 +91,13 @@ class MlV1beta1(base_api.BaseApiClient):
           config, request, global_params=global_params)
 
     Create.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/jobs',
         http_method=u'POST',
         method_id=u'ml.projects.jobs.create',
-        ordered_params=[u'projectsId'],
-        path_params=[u'projectsId'],
+        ordered_params=[u'parent'],
+        path_params=[u'parent'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/jobs',
+        relative_path=u'v1beta1/{+parent}/jobs',
         request_field=u'googleCloudMlV1beta1Job',
         request_type_name=u'MlProjectsJobsCreateRequest',
         response_type_name=u'GoogleCloudMlV1beta1Job',
@@ -103,7 +105,7 @@ class MlV1beta1(base_api.BaseApiClient):
     )
 
     def Get(self, request, global_params=None):
-      """Describe a job.
+      """Describes a job.
 
       Args:
         request: (MlProjectsJobsGetRequest) input message
@@ -116,12 +118,13 @@ class MlV1beta1(base_api.BaseApiClient):
           config, request, global_params=global_params)
 
     Get.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/jobs/{jobsId}',
         http_method=u'GET',
         method_id=u'ml.projects.jobs.get',
-        ordered_params=[u'projectsId', u'jobsId'],
-        path_params=[u'jobsId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/jobs/{jobsId}',
+        relative_path=u'v1beta1/{+name}',
         request_field='',
         request_type_name=u'MlProjectsJobsGetRequest',
         response_type_name=u'GoogleCloudMlV1beta1Job',
@@ -129,7 +132,7 @@ class MlV1beta1(base_api.BaseApiClient):
     )
 
     def List(self, request, global_params=None):
-      """List jobs in the project.
+      """Lists the jobs in the project.
 
       Args:
         request: (MlProjectsJobsListRequest) input message
@@ -142,12 +145,13 @@ class MlV1beta1(base_api.BaseApiClient):
           config, request, global_params=global_params)
 
     List.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/jobs',
         http_method=u'GET',
         method_id=u'ml.projects.jobs.list',
-        ordered_params=[u'projectsId'],
-        path_params=[u'projectsId'],
+        ordered_params=[u'parent'],
+        path_params=[u'parent'],
         query_params=[u'filter', u'pageSize', u'pageToken'],
-        relative_path=u'v1beta1/projects/{projectsId}/jobs',
+        relative_path=u'v1beta1/{+parent}/jobs',
         request_field='',
         request_type_name=u'MlProjectsJobsListRequest',
         response_type_name=u'GoogleCloudMlV1beta1ListJobsResponse',
@@ -165,8 +169,14 @@ class MlV1beta1(base_api.BaseApiClient):
           }
 
     def Create(self, request, global_params=None):
-      """Upload a trained TensorFlow model version. The result of the operation.
-is a Version.
+      """Creates a new version of a model from a trained TensorFlow model.
+
+If the version created in the cloud by this call is the first deployed
+version of the specified model, it will be made the default version of the
+model. When you add a version to a model that already has one or more
+versions, the default version does not automatically change. If you want a
+new version to be the default, you must call
+[projects.models.versions.setDefault](/ml/reference/rest/v1beta1/projects.models.versions/setDefault).
 
       Args:
         request: (MlProjectsModelsVersionsCreateRequest) input message
@@ -179,12 +189,13 @@ is a Version.
           config, request, global_params=global_params)
 
     Create.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/models/{modelsId}/versions',
         http_method=u'POST',
         method_id=u'ml.projects.models.versions.create',
-        ordered_params=[u'projectsId', u'modelsId'],
-        path_params=[u'modelsId', u'projectsId'],
+        ordered_params=[u'parent'],
+        path_params=[u'parent'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/models/{modelsId}/versions',
+        relative_path=u'v1beta1/{+parent}/versions',
         request_field=u'googleCloudMlV1beta1Version',
         request_type_name=u'MlProjectsModelsVersionsCreateRequest',
         response_type_name=u'GoogleLongrunningOperation',
@@ -192,8 +203,13 @@ is a Version.
     )
 
     def Delete(self, request, global_params=None):
-      """Deletes a model version. Each model can have multiple versions deployed and.
-in use at any given time. Use this method to remove a single version.
+      """Deletes a model version.
+
+Each model can have multiple versions deployed and in use at any given
+time. Use this method to remove a single version.
+
+Note: You cannot delete the version that is set as the default version
+of the model unless it is the only remaining version.
 
       Args:
         request: (MlProjectsModelsVersionsDeleteRequest) input message
@@ -206,12 +222,13 @@ in use at any given time. Use this method to remove a single version.
           config, request, global_params=global_params)
 
     Delete.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/models/{modelsId}/versions/{versionsId}',
         http_method=u'DELETE',
         method_id=u'ml.projects.models.versions.delete',
-        ordered_params=[u'projectsId', u'modelsId', u'versionsId'],
-        path_params=[u'modelsId', u'projectsId', u'versionsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/models/{modelsId}/versions/{versionsId}',
+        relative_path=u'v1beta1/{+name}',
         request_field='',
         request_type_name=u'MlProjectsModelsVersionsDeleteRequest',
         response_type_name=u'GoogleLongrunningOperation',
@@ -219,7 +236,12 @@ in use at any given time. Use this method to remove a single version.
     )
 
     def Get(self, request, global_params=None):
-      """Get version metadata.
+      """Gets information about a model version.
+
+Models can have multiple versions. You can call
+[projects.models.versions.list](/ml/reference/rest/v1beta1/projects.models.versions/list)
+to get the same information that this method returns for all of the
+versions of a model.
 
       Args:
         request: (MlProjectsModelsVersionsGetRequest) input message
@@ -232,12 +254,13 @@ in use at any given time. Use this method to remove a single version.
           config, request, global_params=global_params)
 
     Get.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/models/{modelsId}/versions/{versionsId}',
         http_method=u'GET',
         method_id=u'ml.projects.models.versions.get',
-        ordered_params=[u'projectsId', u'modelsId', u'versionsId'],
-        path_params=[u'modelsId', u'projectsId', u'versionsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/models/{modelsId}/versions/{versionsId}',
+        relative_path=u'v1beta1/{+name}',
         request_field='',
         request_type_name=u'MlProjectsModelsVersionsGetRequest',
         response_type_name=u'GoogleCloudMlV1beta1Version',
@@ -245,7 +268,11 @@ in use at any given time. Use this method to remove a single version.
     )
 
     def List(self, request, global_params=None):
-      """List versions in the model.
+      """Gets basic information about all the versions of a model.
+
+If you expect that a model has a lot of versions, or if you need to handle
+only a limited number of results at a time, you can request that the list
+be retrieved in batches (called pages):
 
       Args:
         request: (MlProjectsModelsVersionsListRequest) input message
@@ -258,12 +285,13 @@ in use at any given time. Use this method to remove a single version.
           config, request, global_params=global_params)
 
     List.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/models/{modelsId}/versions',
         http_method=u'GET',
         method_id=u'ml.projects.models.versions.list',
-        ordered_params=[u'projectsId', u'modelsId'],
-        path_params=[u'modelsId', u'projectsId'],
+        ordered_params=[u'parent'],
+        path_params=[u'parent'],
         query_params=[u'pageSize', u'pageToken'],
-        relative_path=u'v1beta1/projects/{projectsId}/models/{modelsId}/versions',
+        relative_path=u'v1beta1/{+parent}/versions',
         request_field='',
         request_type_name=u'MlProjectsModelsVersionsListRequest',
         response_type_name=u'GoogleCloudMlV1beta1ListVersionsResponse',
@@ -271,7 +299,14 @@ in use at any given time. Use this method to remove a single version.
     )
 
     def SetDefault(self, request, global_params=None):
-      """Mark the version as default within the model.
+      """Designates a version to be the default for the model.
+
+The default version is used for prediction requests made against the model
+that don't specify a version.
+
+The first version to be created for a model is automatically set as the
+default. You must make any subsequent changes to the default version
+setting manually using this method.
 
       Args:
         request: (MlProjectsModelsVersionsSetDefaultRequest) input message
@@ -284,12 +319,13 @@ in use at any given time. Use this method to remove a single version.
           config, request, global_params=global_params)
 
     SetDefault.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/models/{modelsId}/versions/{versionsId}:setDefault',
         http_method=u'POST',
         method_id=u'ml.projects.models.versions.setDefault',
-        ordered_params=[u'projectsId', u'modelsId', u'versionsId'],
-        path_params=[u'modelsId', u'projectsId', u'versionsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/models/{modelsId}/versions/{versionsId}:setDefault',
+        relative_path=u'v1beta1/{+name}:setDefault',
         request_field=u'googleCloudMlV1beta1SetDefaultVersionRequest',
         request_type_name=u'MlProjectsModelsVersionsSetDefaultRequest',
         response_type_name=u'GoogleCloudMlV1beta1Version',
@@ -307,7 +343,11 @@ in use at any given time. Use this method to remove a single version.
           }
 
     def Create(self, request, global_params=None):
-      """Create a model which will later contain a set of model versions.
+      """Creates a model which will later contain one or more versions.
+
+You must add at least one version before you can request predictions from
+the model. Add versions by calling
+[projects.models.versions.create](/ml/reference/rest/v1beta1/projects.models.versions/create).
 
       Args:
         request: (MlProjectsModelsCreateRequest) input message
@@ -320,12 +360,13 @@ in use at any given time. Use this method to remove a single version.
           config, request, global_params=global_params)
 
     Create.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/models',
         http_method=u'POST',
         method_id=u'ml.projects.models.create',
-        ordered_params=[u'projectsId'],
-        path_params=[u'projectsId'],
+        ordered_params=[u'parent'],
+        path_params=[u'parent'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/models',
+        relative_path=u'v1beta1/{+parent}/models',
         request_field=u'googleCloudMlV1beta1Model',
         request_type_name=u'MlProjectsModelsCreateRequest',
         response_type_name=u'GoogleCloudMlV1beta1Model',
@@ -333,7 +374,11 @@ in use at any given time. Use this method to remove a single version.
     )
 
     def Delete(self, request, global_params=None):
-      """Delete the model and all versions in it.
+      """Deletes a model.
+
+You can only delete a model if there are no versions in it. You can delete
+versions by calling
+[projects.models.versions.delete](/ml/reference/rest/v1beta1/projects.models.versions/delete).
 
       Args:
         request: (MlProjectsModelsDeleteRequest) input message
@@ -346,12 +391,13 @@ in use at any given time. Use this method to remove a single version.
           config, request, global_params=global_params)
 
     Delete.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/models/{modelsId}',
         http_method=u'DELETE',
         method_id=u'ml.projects.models.delete',
-        ordered_params=[u'projectsId', u'modelsId'],
-        path_params=[u'modelsId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/models/{modelsId}',
+        relative_path=u'v1beta1/{+name}',
         request_field='',
         request_type_name=u'MlProjectsModelsDeleteRequest',
         response_type_name=u'GoogleLongrunningOperation',
@@ -359,7 +405,9 @@ in use at any given time. Use this method to remove a single version.
     )
 
     def Get(self, request, global_params=None):
-      """Describe a model and versions in it.
+      """Gets information about a model, including its name, the description (if.
+set), and the default version (if at least one version of the model has
+been deployed).
 
       Args:
         request: (MlProjectsModelsGetRequest) input message
@@ -372,12 +420,13 @@ in use at any given time. Use this method to remove a single version.
           config, request, global_params=global_params)
 
     Get.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/models/{modelsId}',
         http_method=u'GET',
         method_id=u'ml.projects.models.get',
-        ordered_params=[u'projectsId', u'modelsId'],
-        path_params=[u'modelsId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/models/{modelsId}',
+        relative_path=u'v1beta1/{+name}',
         request_field='',
         request_type_name=u'MlProjectsModelsGetRequest',
         response_type_name=u'GoogleCloudMlV1beta1Model',
@@ -385,7 +434,10 @@ in use at any given time. Use this method to remove a single version.
     )
 
     def List(self, request, global_params=None):
-      """List models in the project.
+      """Lists the models in a project.
+
+Each project can contain multiple models, and each model can have multiple
+versions.
 
       Args:
         request: (MlProjectsModelsListRequest) input message
@@ -398,12 +450,13 @@ in use at any given time. Use this method to remove a single version.
           config, request, global_params=global_params)
 
     List.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/models',
         http_method=u'GET',
         method_id=u'ml.projects.models.list',
-        ordered_params=[u'projectsId'],
-        path_params=[u'projectsId'],
+        ordered_params=[u'parent'],
+        path_params=[u'parent'],
         query_params=[u'pageSize', u'pageToken'],
-        relative_path=u'v1beta1/projects/{projectsId}/models',
+        relative_path=u'v1beta1/{+parent}/models',
         request_field='',
         request_type_name=u'MlProjectsModelsListRequest',
         response_type_name=u'GoogleCloudMlV1beta1ListModelsResponse',
@@ -427,7 +480,10 @@ guaranteed.  If the server doesn't support this method, it returns
 `google.rpc.Code.UNIMPLEMENTED`.  Clients can use
 Operations.GetOperation or
 other methods to check whether the cancellation succeeded or whether the
-operation completed despite cancellation.
+operation completed despite cancellation. On successful cancellation,
+the operation is not deleted; instead, it becomes an operation with
+an Operation.error value with a google.rpc.Status.code of 1,
+corresponding to `Code.CANCELLED`.
 
       Args:
         request: (MlProjectsOperationsCancelRequest) input message
@@ -440,12 +496,13 @@ operation completed despite cancellation.
           config, request, global_params=global_params)
 
     Cancel.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/operations/{operationsId}:cancel',
         http_method=u'POST',
         method_id=u'ml.projects.operations.cancel',
-        ordered_params=[u'projectsId', u'operationsId'],
-        path_params=[u'operationsId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/operations/{operationsId}:cancel',
+        relative_path=u'v1beta1/{+name}:cancel',
         request_field='',
         request_type_name=u'MlProjectsOperationsCancelRequest',
         response_type_name=u'GoogleProtobufEmpty',
@@ -469,12 +526,13 @@ operation. If the server doesn't support this method, it returns
           config, request, global_params=global_params)
 
     Delete.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/operations/{operationsId}',
         http_method=u'DELETE',
         method_id=u'ml.projects.operations.delete',
-        ordered_params=[u'projectsId', u'operationsId'],
-        path_params=[u'operationsId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/operations/{operationsId}',
+        relative_path=u'v1beta1/{+name}',
         request_field='',
         request_type_name=u'MlProjectsOperationsDeleteRequest',
         response_type_name=u'GoogleProtobufEmpty',
@@ -497,12 +555,13 @@ service.
           config, request, global_params=global_params)
 
     Get.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/operations/{operationsId}',
         http_method=u'GET',
         method_id=u'ml.projects.operations.get',
-        ordered_params=[u'projectsId', u'operationsId'],
-        path_params=[u'operationsId', u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}/operations/{operationsId}',
+        relative_path=u'v1beta1/{+name}',
         request_field='',
         request_type_name=u'MlProjectsOperationsGetRequest',
         response_type_name=u'GoogleLongrunningOperation',
@@ -527,12 +586,13 @@ to use different resource name schemes, such as `users/*/operations`.
           config, request, global_params=global_params)
 
     List.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}/operations',
         http_method=u'GET',
         method_id=u'ml.projects.operations.list',
-        ordered_params=[u'projectsId'],
-        path_params=[u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[u'filter', u'pageSize', u'pageToken'],
-        relative_path=u'v1beta1/projects/{projectsId}/operations',
+        relative_path=u'v1beta1/{+name}/operations',
         request_field='',
         request_type_name=u'MlProjectsOperationsListRequest',
         response_type_name=u'GoogleLongrunningListOperationsResponse',
@@ -566,12 +626,13 @@ for training the model with Google Cloud Machine Learning.
           config, request, global_params=global_params)
 
     GetConfig.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}:getConfig',
         http_method=u'GET',
         method_id=u'ml.projects.getConfig',
-        ordered_params=[u'projectsId'],
-        path_params=[u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}:getConfig',
+        relative_path=u'v1beta1/{+name}:getConfig',
         request_field='',
         request_type_name=u'MlProjectsGetConfigRequest',
         response_type_name=u'GoogleCloudMlV1beta1GetConfigResponse',
@@ -581,51 +642,7 @@ for training the model with Google Cloud Machine Learning.
     def Predict(self, request, global_params=None):
       """Performs prediction on the data in the request.
 
-Responses are very similar to requests. There are two top-level fields,
-each of which are JSON lists:
-
-<dl>
-  <dt>predictions</dt>
-  <dd>The list of predictions, one per instance in the request.</dd>
-  <dt>error</dt>
-  <dd>An error message returned instead of a prediction list if any
-      instance produced an error.</dd>
-</dl>
-
-If the call is successful, the response body will contain one prediction
-entry per instance in the request body. If prediction fails for any
-instance, the response body will contain no predictions and will contian
-a single error entry instead.
-
-Even though there is one prediction per instance, the format of a
-prediction is not directly related to the format of an instance.
-Predictions take whatever format is specified in the outputs collection
-defined in the model. The collection of predictions is returned in a JSON
-list. Each member of the list can be a simple value, a list, or a JSON
-object of any complexity. If your model has more than one output tensor,
-each prediction will be a JSON object containing a name/value pair for each
-output. The names identify the output aliases in the graph.
-
-The following examples show some possible responses:
-
-A simple set of predictions for three input instances, where each
-prediction is an integer value:
-<pre>
-{"predictions": [5, 4, 3]}
-</pre>
-A more complex set of predictions, each containing two named values that
-correspond to output tensors, named **label** and **scores** respectively.
-The value of **label** is the predicted category ("car" or "beach") and
-**scores** contains a list of probabilities for that instance across the
-possible categories.
-<pre>
-{"predictions": [{"label": "beach", "scores": [0.1, 0.9]},
-                 {"label": "car", "scores": [0.75, 0.25]}]}
-</pre>
-A response when there is an error processing an input instance:
-<pre>
-{"error": "Divide by zero"}
-</pre>
+**** REMOVE FROM GENERATED DOCUMENTATION
 
       Args:
         request: (MlProjectsPredictRequest) input message
@@ -638,12 +655,13 @@ A response when there is an error processing an input instance:
           config, request, global_params=global_params)
 
     Predict.method_config = lambda: base_api.ApiMethodInfo(
+        flat_path=u'v1beta1/projects/{projectsId}:predict',
         http_method=u'POST',
         method_id=u'ml.projects.predict',
-        ordered_params=[u'projectsId'],
-        path_params=[u'projectsId'],
+        ordered_params=[u'name'],
+        path_params=[u'name'],
         query_params=[],
-        relative_path=u'v1beta1/projects/{projectsId}:predict',
+        relative_path=u'v1beta1/{+name}:predict',
         request_field=u'googleCloudMlV1beta1PredictRequest',
         request_type_name=u'MlProjectsPredictRequest',
         response_type_name=u'GoogleApiHttpBody',

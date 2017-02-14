@@ -45,39 +45,44 @@ class CloudFunction(_messages.Message):
   response to an event. It encapsulate function and triggers configurations.
 
   Enums:
-    StatusValueValuesEnum: [Output only] Status of the function deployment.
+    StatusValueValuesEnum: Status of the function deployment. Output only.
 
   Fields:
     availableMemoryMb: The amount of memory in MB available for a function.
-      Defaults to 128MB.
-    conditionTrigger: A source that fires events in response to a condition in
-      another service.
+      Defaults to 256MB.
     entryPoint: The name of the function (as defined in source code) that will
       be executed. Defaults to the resource name suffix, if not specified. For
       backward compatibility, if function with given name is not found, then
       the system will try to use function named 'function'. For Node.js this
       is name of a function exported by the module specified in
       source_location.
+    eventTrigger: A source that fires events in response to a condition in
+      another service.
     gcsTrigger: Google Cloud Storage resource whose changes trigger the
       events. Currently, it must have the form gs://<bucket>/ (that is, it
       must refer to a bucket, rather than an object).
-    gcsUrl: GCS URL pointing to the zip archive which contains the function.
+    gcsUrl: Google Cloud Storage URL pointing to the zip archive which
+      contains the function.
     httpsTrigger: A https endpoint type of source that can be trigger via URL.
-    latestOperation: [Output only] Name of the most recent operation modifying
-      the function. If the function status is DEPLOYING or DELETING, then it
-      points to the active operation.
+    latestOperation: Name of the most recent operation modifying the function.
+      If the function status is DEPLOYING or DELETING, then it points to the
+      active operation. Output only.
     name: A user-defined name of the function. Function names must be unique
       globally and match pattern: projects/*/locations/*/functions/*
     pubsubTrigger: A pub/sub type of source.
+    serviceAccount: The service account of the function. Output only.
+    sourceArchiveUrl: The URL, starting with gs://, pointing to the zip
+      archive which contains the function.
     sourceRepository: The hosted repository where the function is defined.
-    status: [Output only] Status of the function deployment.
-    timeout: The cloud function execution timeout. Execution is considered
-      failed and can be terminated if the function is not completed at the end
-      of the timeout period. Defaults to 60 seconds.
+    status: Status of the function deployment. Output only.
+    timeout: The function execution timeout. Execution is considered failed
+      and can be terminated if the function is not completed at the end of the
+      timeout period. Defaults to 60 seconds.
+    updateTime: [Output only] The last update timestamp of a cloud function.
   """
 
   class StatusValueValuesEnum(_messages.Enum):
-    """[Output only] Status of the function deployment.
+    """Status of the function deployment. Output only.
 
     Values:
       STATUS_UNSPECIFIED: Status not specified.
@@ -94,31 +99,24 @@ class CloudFunction(_messages.Message):
     DELETING = 4
 
   availableMemoryMb = _messages.IntegerField(1, variant=_messages.Variant.INT32)
-  conditionTrigger = _messages.MessageField('ConditionTrigger', 2)
-  entryPoint = _messages.StringField(3)
+  entryPoint = _messages.StringField(2)
+  eventTrigger = _messages.MessageField('EventTrigger', 3)
   gcsTrigger = _messages.StringField(4)
   gcsUrl = _messages.StringField(5)
   httpsTrigger = _messages.MessageField('HTTPSTrigger', 6)
   latestOperation = _messages.StringField(7)
   name = _messages.StringField(8)
   pubsubTrigger = _messages.StringField(9)
-  sourceRepository = _messages.MessageField('SourceRepository', 10)
-  status = _messages.EnumField('StatusValueValuesEnum', 11)
-  timeout = _messages.StringField(12)
+  serviceAccount = _messages.StringField(10)
+  sourceArchiveUrl = _messages.StringField(11)
+  sourceRepository = _messages.MessageField('SourceRepository', 12)
+  status = _messages.EnumField('StatusValueValuesEnum', 13)
+  timeout = _messages.StringField(14)
+  updateTime = _messages.StringField(15)
 
 
 class CloudfunctionsOperationsGetRequest(_messages.Message):
   """A CloudfunctionsOperationsGetRequest object.
-
-  Fields:
-    name: The name of the operation resource.
-  """
-
-  name = _messages.StringField(1, required=True)
-
-
-class CloudfunctionsOperationsOperationsGetRequest(_messages.Message):
-  """A CloudfunctionsOperationsOperationsGetRequest object.
 
   Fields:
     name: The name of the operation resource.
@@ -180,7 +178,7 @@ class CloudfunctionsProjectsLocationsFunctionsListRequest(_messages.Message):
     location: The project and location from which the function should be
       listed, specified in the format: projects/*/locations/* If you want to
       list functions in all locations, use '-' in place of a location.
-    pageSize: Maximum number of functions to return.
+    pageSize: Maximum number of functions to return per call.
     pageToken: The value returned by the last ListFunctionsResponse; indicates
       that this is a continuation of a prior ListFunctions call, and that the
       system should return the next page of data.
@@ -207,18 +205,19 @@ class CloudfunctionsProjectsLocationsListRequest(_messages.Message):
   pageToken = _messages.StringField(4)
 
 
-class ConditionTrigger(_messages.Message):
-  """Describes ConditionTrigger, used to request events be sent from another
+class EventTrigger(_messages.Message):
+  """Describes EventTrigger, used to request events be sent from another
   service.
 
   Fields:
-    action: Action names contain the service that is sending an event and the
-      kind of action that fired the event. Must be of the form
-      sources/*/actions/* e.g. Directly handle a Message published to Google
-      Cloud PubSub      sources/cloud.pubsub/actions/publish       Handle an
-      object changing in Google Cloud Storage
-      sources/cloud.storage/actions/change       Handle a write to the
-      Firebase Realtime Database      sources/firebase.database/actions/write
+    eventType: event_type names contain the service that is sending an event
+      and the kind of event that was fired. Must be of the form
+      providers/*/eventTypes/* e.g. Directly handle a Message published to
+      Google Cloud PubSub      providers/cloud.pubsub/eventTypes/topic.publish
+      Handle an object changing in Google Cloud Storage
+      providers/cloud.storage/eventTypes/object.change       Handle a write to
+      the Firebase Realtime Database
+      providers/firebase.database/eventTypes/data.write
     path: Optional path within the resource that should be used to filter
       events. Named wildcards may be written in curly brackets (e.g.
       {variable}). The value that matched this parameter will be included  in
@@ -231,7 +230,7 @@ class ConditionTrigger(_messages.Message):
       the name of the project (projects/*)
   """
 
-  action = _messages.StringField(1)
+  eventType = _messages.StringField(1)
   path = _messages.StringField(2)
   resource = _messages.StringField(3)
 
@@ -261,7 +260,7 @@ class ListFunctionsResponse(_messages.Message):
 
 
 class ListLocationsResponse(_messages.Message):
-  """The response message for LocationService.ListLocations.
+  """The response message for Locations.ListLocations.
 
   Fields:
     locations: A list of locations that matches the specified filter in the
@@ -372,7 +371,8 @@ class Operation(_messages.Message):
     done: If the value is `false`, it means the operation is still in
       progress. If true, the operation is completed, and either `error` or
       `response` is available.
-    error: The error result of the operation in case of failure.
+    error: The error result of the operation in case of failure or
+      cancellation.
     metadata: Service-specific metadata associated with the operation.  It
       typically contains progress information and common metadata such as
       create time. Some services might not provide such metadata.  Any method
@@ -456,66 +456,6 @@ class Operation(_messages.Message):
   response = _messages.MessageField('ResponseValue', 5)
 
 
-class OperationMetadata(_messages.Message):
-  """Metadata describing an Operation
-
-  Enums:
-    TypeValueValuesEnum: Type of operation.
-
-  Messages:
-    RequestValue: The original request that started the operation.
-
-  Fields:
-    request: The original request that started the operation.
-    target: Target of the operation - for example
-      projects/project-1/regions/region-1/functions/function-1
-    type: Type of operation.
-  """
-
-  class TypeValueValuesEnum(_messages.Enum):
-    """Type of operation.
-
-    Values:
-      OPERATION_UNSPECIFIED: Unknown operation type.
-      CREATE_FUNCTION: Triggered by CreateFunction call
-      UPDATE_FUNCTION: Triggered by UpdateFunction call
-      DELETE_FUNCTION: Triggered by DeleteFunction call.
-    """
-    OPERATION_UNSPECIFIED = 0
-    CREATE_FUNCTION = 1
-    UPDATE_FUNCTION = 2
-    DELETE_FUNCTION = 3
-
-  @encoding.MapUnrecognizedFields('additionalProperties')
-  class RequestValue(_messages.Message):
-    """The original request that started the operation.
-
-    Messages:
-      AdditionalProperty: An additional property for a RequestValue object.
-
-    Fields:
-      additionalProperties: Properties of the object. Contains field @type
-        with type URL.
-    """
-
-    class AdditionalProperty(_messages.Message):
-      """An additional property for a RequestValue object.
-
-      Fields:
-        key: Name of the additional property.
-        value: A extra_types.JsonValue attribute.
-      """
-
-      key = _messages.StringField(1)
-      value = _messages.MessageField('extra_types.JsonValue', 2)
-
-    additionalProperties = _messages.MessageField('AdditionalProperty', 1, repeated=True)
-
-  request = _messages.MessageField('RequestValue', 1)
-  target = _messages.StringField(2)
-  type = _messages.EnumField('TypeValueValuesEnum', 3)
-
-
 class OperationMetadataV1Beta2(_messages.Message):
   """Metadata describing an Operation
 
@@ -581,11 +521,11 @@ class SourceRepository(_messages.Message):
 
   Fields:
     branch: The name of the branch from which the function should be fetched.
-    deployedRevision: [Output only] The id of the revision that was resolved
-      at the moment of function creation or update. For example when a user
-      deployed from a branch, it will be the revision id of the latest change
-      on this branch at that time. If user deployed from revision then this
-      value will be always equal to the revision specified by the user.
+    deployedRevision: The id of the revision that was resolved at the moment
+      of function creation or update. For example when a user deployed from a
+      branch, it will be the revision id of the latest change on this branch
+      at that time. If user deployed from revision then this value will be
+      always equal to the revision specified by the user. Output only.
     repositoryUrl: URL to the hosted repository where the function is defined.
       Only paths in https://source.developers.google.com domain are supported.
       The path should contain the name of the repository.

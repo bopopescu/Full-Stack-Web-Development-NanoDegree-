@@ -12,19 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Convenience functions for dealing with instance templates."""
+
+from googlecloudsdk.api_lib.compute import alias_ip_range_utils
 from googlecloudsdk.api_lib.compute import constants
+from googlecloudsdk.api_lib.compute import image_utils
 from googlecloudsdk.api_lib.compute import utils
+from googlecloudsdk.command_lib.compute import scope as compute_scope
+from googlecloudsdk.command_lib.compute.networks.subnets import flags as subnet_flags
 
 EPHEMERAL_ADDRESS = object()
 
 
 # TODO(user): Add unit tests for utilities
 def CreateNetworkInterfaceMessage(
-    scope_prompter, messages, network, region, subnet, address):
+    resources, scope_lister, messages, network, region, subnet, address,
+    alias_ip_ranges_string=None):
   """Creates and returns a new NetworkInterface message.
 
   Args:
-    scope_prompter: Scope prompter object,
+    resources: generates resource references,
+    scope_lister: function, provides scopes for prompting subnet region,
     messages: GCE API messages,
     network: network,
     region: region for subnetwork,
@@ -33,20 +40,26 @@ def CreateNetworkInterfaceMessage(
                * None - no address,
                * EPHEMERAL_ADDRESS - ephemeral address,
                * string - address name to be fetched from GCE API.
-
+    alias_ip_ranges_string: command line string specifying a list of alias
+        IP ranges.
   Returns:
     network_interface: a NetworkInterface message object
   """
+  # By default interface is attached to default network. If network or subnet
+  # are specified they're used instead.
+  network_interface = messages.NetworkInterface()
   if subnet is not None:
-    subnet_ref = scope_prompter.CreateRegionalReference(
-        subnet, region, resource_type='subnetworks')
-    network_interface = messages.NetworkInterface(
-        subnetwork=subnet_ref.SelfLink())
-  else:
-    network_ref = scope_prompter.CreateGlobalReference(
-        network or constants.DEFAULT_NETWORK, resource_type='networks')
-    network_interface = messages.NetworkInterface(
-        network=network_ref.SelfLink())
+    subnet_ref = subnet_flags.SubnetworkResolver().ResolveResources(
+        [subnet], compute_scope.ScopeEnum.REGION, region, resources,
+        scope_lister=scope_lister)[0]
+    network_interface.subnetwork = subnet_ref.SelfLink()
+  if network is not None:
+    network_ref = resources.Parse(network, collection='compute.networks')
+    network_interface.network = network_ref.SelfLink()
+  elif subnet is None:
+    network_ref = resources.Parse(
+        constants.DEFAULT_NETWORK, collection='compute.networks')
+    network_interface.network = network_ref.SelfLink()
 
   if address:
     access_config = messages.AccessConfig(
@@ -60,17 +73,23 @@ def CreateNetworkInterfaceMessage(
 
     network_interface.accessConfigs = [access_config]
 
+  if alias_ip_ranges_string:
+    network_interface.aliasIpRanges = (
+        alias_ip_range_utils.CreateAliasIpRangeMessagesFromString(
+            messages, False, alias_ip_ranges_string))
+
   return network_interface
 
 
 def CreateNetworkInterfaceMessages(
-    scope_prompter, messages, network_interface_arg, region):
+    resources, scope_lister, messages, network_interface_arg, region):
   """Create network interface messages.
 
   Args:
-    scope_prompter: generates resource references.
+    resources: generates resource references,
+    scope_lister: function, provides scopes for prompting subnet region,
     messages: creates resources.
-    network_interface_arg: CLI argument specyfying network interfaces.
+    network_interface_arg: CLI argument specifying network interfaces.
     region: region of the subnetwork.
   Returns:
     list, items are NetworkInterfaceMessages.
@@ -83,10 +102,11 @@ def CreateNetworkInterfaceMessages(
       if address == '':
         address = EPHEMERAL_ADDRESS
       result.append(CreateNetworkInterfaceMessage(
-          scope_prompter, messages, interface.get('network', None),
+          resources, scope_lister, messages, interface.get('network', None),
           region,
           interface.get('subnet', None),
-          address))
+          address,
+          interface.get('aliases', None)))
   return result
 
 
@@ -159,7 +179,7 @@ def CreatePersistentCreateDiskMessages(scope_prompter, messages, create_disks):
 
   disks_messages = []
   for disk in create_disks or []:
-    name = disk['name']
+    name = disk.get('name')
     # Resolves the mode.
     mode_value = disk.get('mode', 'rw')
     if mode_value == 'rw':
@@ -169,7 +189,10 @@ def CreatePersistentCreateDiskMessages(scope_prompter, messages, create_disks):
 
     auto_delete = disk.get('auto-delete') == 'yes'
     disk_size_gb = utils.BytesToGb(disk.get('size'))
-    image_uri, _ = scope_prompter.ExpandImageFlag(
+    image_expander = image_utils.ImageExpander(scope_prompter.compute_client,
+                                               scope_prompter.resources)
+    image_uri, _ = image_expander.ExpandImageFlag(
+        user_project=scope_prompter.project,
         image=disk.get('image'),
         image_family=disk.get('image-family'),
         image_project=disk.get('image-project'),

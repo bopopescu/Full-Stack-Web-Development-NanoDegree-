@@ -19,6 +19,7 @@ import errno
 import os
 import re
 import signal
+import subprocess
 import sys
 import time
 
@@ -29,7 +30,6 @@ from googlecloudsdk.core import properties
 from googlecloudsdk.core.configurations import named_configs
 from googlecloudsdk.core.console import console_attr
 from googlecloudsdk.core.util import platforms
-from googlecloudsdk.third_party.py27 import py27_subprocess as subprocess
 
 
 class PermissionError(exceptions.Error):
@@ -210,6 +210,10 @@ class _ProcessHolder(object):
   # pylint: disable=unused-argument
   def Handler(self, signum, frame):
     if self.process:
+      log.debug('Subprocess [{pid}] got [{signum}]'.format(
+          signum=signum,
+          pid=self.process.pid
+      ))
       self.process.terminate()
       ret_val = self.process.wait()
       sys.exit(ret_val)
@@ -229,6 +233,7 @@ def Exec(args,
          no_exit=False,
          out_func=None,
          err_func=None,
+         in_str=None,
          **extra_popen_kwargs):
   """Emulates the os.exec* set of commands, but uses subprocess.
 
@@ -244,6 +249,7 @@ def Exec(args,
       process. This can be e.g. log.file_only_logger.debug or log.out.write.
     err_func: str->None, a function to call with the stderr of the executed
       process. This can be e.g. log.file_only_logger.debug or log.err.write.
+    in_str: str, input to send to the subprocess' stdin.
     **extra_popen_kwargs: Any additional kwargs will be passed through directly
       to subprocess.Popen
 
@@ -266,26 +272,28 @@ def Exec(args,
 
   process_holder = _ProcessHolder()
   with _ReplaceSignal(signal.SIGTERM, process_holder.Handler):
-    if out_func:
-      extra_popen_kwargs['stdout'] = subprocess.PIPE
-    if err_func:
-      extra_popen_kwargs['stderr'] = subprocess.PIPE
-    try:
-      p = subprocess.Popen(args, env=env, **extra_popen_kwargs)
-    except OSError as err:
-      if err.errno == errno.EACCES:
-        raise PermissionError(err.strerror)
-      elif err.errno == errno.ENOENT:
-        raise InvalidCommandError(args[0])
-      raise
-    process_holder.process = p
-
-    stdout, stderr = p.communicate()
-    if out_func:
-      out_func(stdout)
-    if err_func:
-      err_func(stderr)
-    ret_val = p.returncode
+    with _ReplaceSignal(signal.SIGINT, process_holder.Handler):
+      if out_func:
+        extra_popen_kwargs['stdout'] = subprocess.PIPE
+      if err_func:
+        extra_popen_kwargs['stderr'] = subprocess.PIPE
+      if in_str:
+        extra_popen_kwargs['stdin'] = subprocess.PIPE
+      try:
+        p = subprocess.Popen(args, env=env, **extra_popen_kwargs)
+      except OSError as err:
+        if err.errno == errno.EACCES:
+          raise PermissionError(err.strerror)
+        elif err.errno == errno.ENOENT:
+          raise InvalidCommandError(args[0])
+        raise
+      process_holder.process = p
+      stdout, stderr = p.communicate(in_str)
+      if out_func:
+        out_func(stdout)
+      if err_func:
+        err_func(stderr)
+      ret_val = p.returncode
 
   if no_exit:
     return ret_val
@@ -309,7 +317,24 @@ def UninterruptibleSection(stream, message=None):
       message=(message or 'This operation cannot be cancelled.'))
   def _Handler(unused_signal, unused_frame):
     stream.write(message)
-  return _ReplaceSignal(signal.SIGINT, _Handler)
+  return CtrlCSection(_Handler)
+
+
+def CtrlCSection(handler=None):
+  """Run a section of code with CTRL-C redirected handler.
+
+  Args:
+    handler: func(), handler to call if SIGINT is received. Default None, which
+        implies noop handler. In every case original Ctrl-C handler
+        is not invoked.
+
+  Returns:
+    Context manager that redirects ctrl-c handler during its lifetime.
+  """
+
+  def _Handler(unused_signal, unused_frame):
+    pass
+  return _ReplaceSignal(signal.SIGINT, handler or _Handler)
 
 
 def KillSubprocess(p):
