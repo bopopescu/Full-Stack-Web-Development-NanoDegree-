@@ -1,19 +1,31 @@
 -- Table definitions for the tournament project.
---
--- Put your SQL 'create table' statements in this file; also 'create view'
--- statements if you choose to use it.
---
--- You can write comments in this file by starting them with two dashes, like
--- these lines here.
 
-
-CREATE DATABASE tournament;
-\c tournament;
-
+-- Drop tournament database if exists
 DROP tournament IF EXISTS;
 
-CREATE TABLE IF NOT EXISTS players(id SERIAL PRIMARY KEY, name TEXT);
-CREATE TABLE IF NOT EXISTS matches (id SERIAL PRIMARY KEY,
-    player1 SERIAL references players(id),
-    player2 SERIAL references players(id)
+-- Create Database 'Tournament'
+CREATE DATABASE tournament;
+
+-- Connect to the tournament database
+\c tournament;
+
+-- Create Players Database
+CREATE TABLE IF NOT EXISTS players(player_id SERIAL PRIMARY KEY, name TEXT);
+
+-- Create Matches Database
+CREATE TABLE IF NOT EXISTS matches (
+  match_id serial PRIMARY KEY,
+  winner INTEGER,
+  loser INTEGER,
+  FOREIGN KEY(winner) REFERENCES players(player_id),
+  FOREIGN KEY(loser) REFERENCES players(player_id)
 );
+
+-- Create Standings View
+CREATE VIEW standings AS
+SELECT p.player_id as player_id, p.name,
+(SELECT count(*) FROM matches WHERE matches.winner = p.player_id) as matches_won,
+(SELECT count(*) FROM matches WHERE p.player_id in (winner, loser)) as matches_played
+FROM players p
+GROUP BY p.player_id
+ORDER BY matches_won DESC;

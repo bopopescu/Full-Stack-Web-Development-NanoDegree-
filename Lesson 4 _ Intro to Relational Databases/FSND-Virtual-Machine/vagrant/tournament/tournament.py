@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # tournament.py -- implementation of a Swiss-system tournament
 #
-
 import psycopg2
 
 
@@ -12,31 +11,30 @@ def connect():
 
 def deleteMatches():
     """Remove all the match records from the database."""
-    DB = psycopg2.connect("dbname=tournament")
+    DB = connect()
     c = DB.cursor()
     c.execute("DELETE FROM matches;")
     DB.commit()
     DB.close()
-    return c
 
 
 def deletePlayers():
     """Remove all the player records from the database."""
-    DB = psycopg2.connect("dbname=tournament")
+    DB = connect()
     c = DB.cursor()
     c.execute("DELETE FROM players;")
     DB.commit()
     DB.close()
-    return c
 
 
 def countPlayers():
     """Returns the number of players currently registered."""
-    DB = psycopg2.connect("dbname=tournament")
+    DB = connect()
     c = DB.cursor()
     c.execute("SELECT count (*) FROM players")
     rows = c.fetchall()
-    print "Count players is returning: {}".format(rows)
+    # print "Count players is returning: {}".format(rows)
+    # Used for checking the returned value of countPlayers
     for row in rows:
         return row[0]
     DB.close()
@@ -49,7 +47,7 @@ def registerPlayer(name):
     Args:
       name: the player's full name (need not be unique).
     """
-    DB = psycopg2.connect("dbname=tournament")
+    DB = connect()
     c = DB.cursor()
     c.execute("INSERT INTO players(name) VALUES(%s)", (name,))
     DB.commit()
@@ -59,8 +57,8 @@ def registerPlayer(name):
 def playerStandings():
     """Returns a list of the players and their win records, sorted by wins.
 
-    The first entry in the list should be the player in first place, or a player
-    tied for first place if there is currently a tie.
+    The first entry in the list should be the player in first place, or a
+    player tied for first place if there is currently a tie.
 
     Returns:
       A list of tuples, each of which contains (id, name, wins, matches):
@@ -69,6 +67,17 @@ def playerStandings():
         wins: the number of matches the player has won
         matches: the number of matches the player has played
     """
+    # If the top two players have more than zero wins and are equal, then it
+    # will count total wins divided by total games played
+    DB = connect()
+    c = DB.cursor()
+    c.execute("SELECT * FROM standings;")
+    rows = c.fetchall()
+    if (rows[0][2] != 0) and (rows[0][2] == rows[1][2]):
+        c.execute("SELECT player_id, name, matches_won, matches_played FROM standings ORDER BY (cast(matches_won AS DECIMAL)/matches_played) DESC;")
+        rows = c.fetchall()
+    DB.close()
+    return rows
 
 
 def reportMatch(winner, loser):
@@ -78,6 +87,12 @@ def reportMatch(winner, loser):
       winner:  the id number of the player who won
       loser:  the id number of the player who lost
     """
+    DB = connect()
+    c = DB.cursor()
+    c.execute("INSERT INTO matches(winner, loser) VALUES (%s, %s)",
+              (winner, loser,))
+    DB.commit()
+    DB.close()
 
 
 def swissPairings():
@@ -95,3 +110,14 @@ def swissPairings():
         id2: the second player's unique id
         name2: the second player's name
     """
+    DB = connect()
+    c = DB.cursor()
+    c.execute("SELECT * FROM standings")
+    rows = c.fetchall()
+    pairings = []
+    length = len(rows)
+    for p in range(0, length - 1, 2):
+        paired = (rows[p][0], rows[p][1], rows[p + 1][0], rows[p + 1][1])
+        pairings.append(paired)
+    DB.close()
+    return pairings
