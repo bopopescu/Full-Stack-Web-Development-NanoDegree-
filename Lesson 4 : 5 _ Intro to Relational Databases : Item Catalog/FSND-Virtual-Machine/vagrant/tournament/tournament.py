@@ -67,14 +67,13 @@ def playerStandings():
         wins: the number of matches the player has won
         matches: the number of matches the player has played
     """
-    # If the top two players have more than zero wins and are equal, then it
-    # will count total wins divided by total games played
     DB = connect()
     c = DB.cursor()
     c.execute("SELECT * FROM standings;")
     rows = c.fetchall()
     if (rows[0][2] != 0) and (rows[0][2] == rows[1][2]):
-        c.execute("SELECT player_id, name, matches_won, matches_played FROM standings ORDER BY (cast(matches_won AS DECIMAL)/matches_played) DESC;")
+        c.execute(
+            "SELECT player_id, name, matches_won, matches_played FROM standings")
         rows = c.fetchall()
     DB.close()
     return rows
