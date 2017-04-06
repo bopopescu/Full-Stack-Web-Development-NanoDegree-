@@ -1,0 +1,29 @@
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Edit {{restaurant.name}}</title>
+    <link rel=stylesheet type=text/css href="{{ url_for('static', filename='bootstrap.css') }}">
+    <link href="https://fonts.googleapis.com/css?family=Homemade+Apple" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container">
+        <div class="row">
+            <div class="col-md-12">
+                <h1 class="text-center">Edit {{restaurant.name}}</h1>
+            </div>
+        </div>
+        <form action="#" method = 'post'>
+        <div class="row">
+            <div class="col-md-12 sepmen">
+                <p style="margin-top: 14px;">Name:</p>
+                <input type ='text' size='30' name='name' placeholder = '{{restaurant.name}}'>
+                <input type='submit' value='Create' class="btn">
+                <a href = ' {{url_for('showRestaurans')}} '> Cancel </a>
+            </div>
+        </div>
+    </div>
+</form>
+
+</body>
