@@ -1,37 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 
-<head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=Edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>All Restaurants</title>
-    <link rel=stylesheet type=text/css href="{{ url_for('static', filename='bootstrap.css') }}">
-</head>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>All Restaurants</title>
+        <link rel=stylesheet type=text/css href="{{ url_for('static', filename='bootstrap.css') }}">
+    </head>
 
-<body>
-    <div class="container">
-        <div class="row">
-            <div class="col-md-8">
-                <h1 class="text-right">All Restaurants</h1>
-            </div>
-            <div class="col-md-4">
-                <a href=" {{url_for('newRestaurant')}} " class="btn1">Create New Restaurant</a>
-            </div>
-        </div>
-        <div class="row">
-        {% for r in restaurants %}
-            <div class="col-md-4 rest">
-                <span class="secret1"><a href=' {{url_for('showMenu', restaurant_id = r.id)}} '><h3 class="text-center restname">{{r.name}}</h3></a></span>
-                <div class="secret">
-                    <a href=' {{url_for('editRestaurant', restaurant_id = r.id)}} '><h4 class="control">Edit Restaurant</h4></a>
-                    <a href=' {{url_for('deleteRestaurant', restaurant_id = r.id)}} '><h4 class="control">Delete Restaurant</h4></a>
+    <body>
+        <div class="container">
+            <div class="row">
+                <div class="col-md-4">
+                    {% with messages = get_flashed_messages() %}
+                    {% if messages %}
+                    <ul>
+                        {% for message in messages %}
+                        <li>
+                            <h3 style="head">{{message}}</h3>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                    {% endwith %}
+                </div>
+                <div class="col-md-4">
+                    <h1 class="text-center head">All Restaurants</h1>
+                </div>
+                <div class="col-md-4" style="height: inherit">
+                    <a href="{{url_for('newRestaurant')}}" class="btn1">Create New Restaurant</a>
                 </div>
             </div>
-        {% endfor %}
+            <div class="row">
+                {% for r in restaurants %}
+                <div class="col-md-4 rest">
+                    <span class="secret1"><a href=' {{url_for('showMenu', restaurant_id = r.id)}} '><h3 class="text-center restname">{{r.name}}</h3></a></span>
+                    <div class="secret">
+                        <a href="{{url_for('editRestaurant', restaurant_id = r.id)}}"><h4 class="control">Edit Restaurant</h4></a>
+                        <a href="{{url_for('deleteRestaurant', restaurant_id = r.id)}}"><h4 class="control">Delete Restaurant</h4></a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
         </div>
-    </div>
 
-</body>
+    </body>
 
 </html>

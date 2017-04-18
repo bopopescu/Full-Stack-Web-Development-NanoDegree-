@@ -11,19 +11,19 @@
     <div class="container">
         <div class="row">
             <div class="col-md-12">
-                <h1 class="text-center">Delete {{restaurant.name}}</h1>
+                <h1 class="text-center head">Delete {{restaurant.name}}</h1>
             </div>
         </div>
-        <form action="#" method = 'post'>
-        <div class="row">
-            <div class="col-md-12 sepmen">
-                <p class="margin-top: 14px;">Are you sure you want to delete {{restaurant.name}}?</p>
-                <input type='submit' value='Delete' class="btn">
-                <a href = ' {{url_for('showRestaurans')}} '> Cancel </a>
+        <form action="{{ url_for('deleteRestaurant', restaurant_id = restaurant.id)}}" method='post'>
+            <div class="row">
+                <div class="col-md-12 sepmen">
+                    <p class="margin-top: 14px;">Are you sure you want to delete {{restaurant.name}}?</p>
+                    <input type='submit' value='Delete' class="btn">
+                    <a href="{{url_for('showRestaurants')}}"> Cancel </a>
+                </div>
             </div>
-        </div>
+        </form>
     </div>
-</form>
 
 </body>
 

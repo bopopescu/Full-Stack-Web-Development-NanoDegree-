@@ -11,53 +11,47 @@
     <div class="container">
         <div class="row">
             <div class="col-md-12">
-                <h1 class="text-center">Edit {{item.name}}</h1>
+                <h1 class="text-center head">Edit {{item.name}}</h1>
             </div>
         </div>
-        <form action="#" method = 'post'>
-        <div class="row">
-            <div class="col-md-12 sepmen">
-                <p style="margin-top: 14px;">Name:</p>
-                <input type ='text' size='30' name='name' placeholder = '{{item.name }}'>
-                <p style="margin-top: 14px;">Description:</p>
-                <input type ='text' size='30' name='description' placeholder = '{{item.description}}'>
-                <p style="margin-top: 14px;">Price:</p>
-                <input type ='text' size='30' name='price' placeholder = '{{item.price}}'>
-                <p style="margin-top: 14px;">Course:<p>
-                {% if item.course == 'Appetizer' %}
-            		<dd style="margin-top: 14px;"><input type ='radio' name='course' value='Appetizer'checked >Appetizer</dd>
-            	{%else%}
-            	   <dd style="margin-top: 14px;"><input type ='radio' name='course' value='Appetizer' >  Appetizer</dd>
-                {% endif %}
+        <form action="{{ url_for('editMenuItem', restaurant_id = restaurant_id, menu_id = item.id)}}"
+            method='post'>
+            <div class="row">
+                <div class="col-md-12 sepmen">
+                    <p style="margin-top: 14px;">Name:</p>
+                    <input type='text' size='30' name='name' placeholder='{{item.name}}'>
+                    <p style="margin-top: 14px;">Description:</p>
+                    <input type='text' size='30' name='description' placeholder='{{item.description}}'>
+                    <p style="margin-top: 14px;">Price:</p>
+                    <input type='text' size='30' name='price' placeholder='{{item.price}}'>
+                    <p style="margin-top: 14px;">Course:
+                        <p>
+                            {% if item.course == 'Appetizer' %}
+                            <dd style="margin-top: 14px;"><input type='radio' name='course' value='Appetizer' checked>Appetizer</dd>
+                            {%else%}
+                            <dd style="margin-top: 14px;"><input type='radio' name='course' value='Appetizer'>                                Appetizer</dd>
+                            {% endif %} {% if item.course == 'Entree' %}
+                            <dd style="margin-top: 14px;"><input type='radio' name='course' value='Entree' checked>                                Entree</dd>
 
-                {% if item.course == 'Entree' %}
-                   <dd style="margin-top: 14px;"><input type ='radio' name='course' value='Entree' checked>  Entree</dd>
+                            {%else%}
+                            <dd style="margin-top: 14px;"><input type='radio' name='course' value='Entree'> Entree</dd>
+                            {% endif %} {% if item.course == 'Dessert'%}
+                            <dd style="margin-top: 14px;"><input type='radio' name='course' value='Dessert' checked>                                Dessert</dd>
 
-                {%else%}
-            		<dd style="margin-top: 14px;"><input type ='radio' name='course' value='Entree'>  Entree</dd>
-                {% endif %}
+                            {% else %}
+                            <dd style="margin-top: 14px;"><input type='radio' name='course' value='Dessert'> Dessert</dd>
 
-            	{% if item.course == 'Dessert'%}
-            		<dd style="margin-top: 14px;"><input type ='radio' name='course' value='Dessert'checked >  Dessert</dd>
-
-            	{% else %}
-            	   <dd style="margin-top: 14px;"><input type ='radio' name='course' value='Dessert'>  Dessert</dd>
-
-            	{% endif %}
-
-
-            	{%if item.course =='Beverage'%}
-            		<dd style="margin-top: 14px;"><input type ='radio' name='course' value='Beverage'checked >  Beverage</dd>
-            	{% else %}
-            		<dd style="margin-top: 14px; margin-bottom: 14px;"><input type ='radio' name='course' value='Beverage'>  Beverage</dd>
-            	{% endif %}
-                <input type='submit' value='Edit' class="btn">
-                <a href=' {{url_for('showMenu', restaurant_id = restaurant.id)}} '> Cancel </a>
+                            {% endif %} {%if item.course =='Beverage'%}
+                            <dd style="margin-top: 14px;"><input type='radio' name='course' value='Beverage' checked>                                Beverage</dd>
+                            {% else %}
+                            <dd style="margin-top: 14px; margin-bottom: 14px;"><input type='radio' name='course' value='Beverage'> Beverage</dd>
+                            {% endif %}
+                            <input type='submit' value='Edit' class="btn">
+                            <a href="{{url_for('showMenu', restaurant_id = item.restaurant_id)}}"> Cancel </a>
+                </div>
             </div>
-        </div>
+            </form>
     </div>
-</form>
-
 </body>
 
 </html>

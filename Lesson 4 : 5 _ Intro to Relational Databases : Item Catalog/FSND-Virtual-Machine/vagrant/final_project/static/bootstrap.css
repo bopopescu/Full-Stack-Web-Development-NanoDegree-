@@ -33,8 +33,10 @@
   background-position: center;
   background-repeat: no-repeat;
   height: 200px;
-  padding-bottom: 15px;
-  padding-top: 15px;
+  padding: 15px 15px;
+  margin-right: 35px;
+  margin-bottom: 35px;
+  max-width: 255px;
 }
 
 .restname {
@@ -63,13 +65,15 @@
   background-size: 500px 500px;
   background-position: center;
   background-repeat: no-repeat;
-  margin: 23px auto;
+  margin: 50px 350px 50px 350px;
+  max-width: 500px;
+  padding: 15px 15px;
 }
 
-.sepmen h2, .sepmen p, .sepmen dd{
-    color: #FFF;
-    font-family: 'Homemade Apple', cursive;
-    margin-top: 14px;
+.sepmen h2, .sepmen p, .sepmen dd {
+  color: #FFF;
+  font-family: 'Homemade Apple', cursive;
+  margin-top: 14px;
 }
 
 .btn {
@@ -95,6 +99,7 @@
   font-size: 20px;
   background: #3498db;
   padding: 10px 20px 10px 20px;
+  margin: 50px 20px;
   text-decoration: none;
 }
 
@@ -106,6 +111,10 @@
   background-image: -o-linear-gradient(top, #3cb0fd, #3498db);
   background-image: linear-gradient(to bottom, #3cb0fd, #3498db);
   text-decoration: none;
+}
+
+.head {
+  color: #337ab7;
 }
 
 html {
@@ -442,7 +451,6 @@ h4 small, .h4 small, h5 small, .h5 small, h6 small, .h6 small, h4 .small, .h4 .s
 
 h1, .h1 {
   font-size: 36px;
-  color: #337ab7;
   padding-bottom: 10px;
 }
 

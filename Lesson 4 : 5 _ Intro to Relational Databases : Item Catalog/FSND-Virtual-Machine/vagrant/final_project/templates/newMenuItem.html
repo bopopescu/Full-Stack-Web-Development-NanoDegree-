@@ -11,30 +11,30 @@
     <div class="container">
         <div class="row">
             <div class="col-md-12">
-                <h1 class="text-center">New Menu Item</h1>
+                <h1 class="text-center head">New Menu Item</h1>
             </div>
         </div>
-        <form action="#" method = 'post'>
-        <div class="row">
-            <div class="col-md-12 sepmen">
-                <p style="margin-top: 14px;">Name:</p>
-                <input type ='text' size='30' name='name' placeholder = 'Name'>
-                <p style="margin-top: 14px;">Description:</p>
-                <input type ='text' size='30' name='description' placeholder = 'Description'>
-                <p style="margin-top: 14px;">Price:</p>
-                <input type ='text' size='30' name='price' placeholder = 'Price'>
-                <p style="margin-top: 14px;">Course:<p>
-            	   <dd style="margin-top: 14px;"><input type ='radio' name='course' value='Appetizer' >  Appetizer</dd>
-            	   <dd style="margin-top: 14px;"><input type ='radio' name='course' value='Entree'>  Entree</dd>
-            	   <dd style="margin-top: 14px;"><input type ='radio' name='course' value='Dessert'>  Dessert</dd>
-            	   <dd style="margin-top: 14px; margin-bottom: 14px;"><input type ='radio' name='course' value='Beverage'>  Beverage</dd>
-                <input type='submit' value='Create' class="btn">
-                <a href=' {{url_for('showMenu', restaurant_id = restaurant.id)}} '> Cancel </a>
+        <form action="{{ url_for('newMenuItem', restaurant_id = restaurant_id)}}" method='post'>
+            <div class="row">
+                <div class="col-md-12 sepmen">
+                    <p style="margin-top: 14px;">Name:</p>
+                    <input type='text' size='30' name='name' placeholder='Name'>
+                    <p style="margin-top: 14px;">Description:</p>
+                    <input type='text' size='30' name='description' placeholder='Description'>
+                    <p style="margin-top: 14px;">Price:</p>
+                    <input type='text' size='30' name='price' placeholder='Price'>
+                    <p style="margin-top: 14px;">Course:
+                        <p>
+                            <dd style="margin-top: 14px;"><input type='radio' name='course' value='Appetizer'>                                Appetizer</dd>
+                            <dd style="margin-top: 14px;"><input type='radio' name='course' value='Entree'> Entree</dd>
+                            <dd style="margin-top: 14px;"><input type='radio' name='course' value='Dessert'> Dessert</dd>
+                            <dd style="margin-top: 14px; margin-bottom: 14px;"><input type='radio' name='course' value='Beverage'> Beverage</dd>
+                            <input type='submit' value='Create' class="btn">
+                            <a href="{{url_for('showMenu', restaurant_id = restaurant_id)}}"> Cancel </a>
+                </div>
             </div>
-        </div>
+        </form>
     </div>
-</form>
-
 </body>
 
 </html>

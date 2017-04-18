@@ -1,38 +1,51 @@
 <!DOCTYPE html>
 <html lang="en">
 
-<head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=Edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{restaurant.name}} Menu</title>
-    <link rel=stylesheet type=text/css href="{{ url_for('static', filename='bootstrap.css') }}">
-    <link href="https://fonts.googleapis.com/css?family=Homemade+Apple" rel="stylesheet">
-</head>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{{restaurant.name}} Menu</title>
+        <link rel=stylesheet type=text/css href="{{ url_for('static', filename='bootstrap.css') }}">
+        <link href="https://fonts.googleapis.com/css?family=Homemade+Apple" rel="stylesheet">
+    </head>
 
-<body>
-    <div class="container">
-        <div class="row">
-            <div class="col-md-8">
-                <a href=' {{url_for('showRestaurans')}} '><h1 class="text-right">{{restaurant.name}}</h1></a>
+    <body>
+        <div class="container">
+            <div class="row">
+                <div class="col-md-4">
+                    {% with messages = get_flashed_messages() %}
+                    {% if messages %}
+                    <ul>
+                        {% for message in messages %}
+                        <li>
+                            <h3 style="head">{{message}}</h3>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                    {% endwith %}
+                </div>
+                <div class="col-md-4">
+                    <a href="{{url_for('showRestaurants')}}"><h1 class="text-center head">{{restaurant.name}}</h1></a>
+                </div>
+                <div class="col-md-4">
+                    <a href="{{url_for('newMenuItem', restaurant_id = restaurant.id)}}" class="btn1">Create New Menu Item</a>
+                </div>
             </div>
-            <div class="col-md-4">
-                <a href=' {{url_for('newMenuItem', restaurant_id = restaurant.id)}} ' class="bt1n">Create New Menu Item</a>
+            <div class="row">
+                {% for i in items %}
+                <div class="col-md-12 sepmen">
+                    <h2>{{i.name}}</h2>
+                    <p>{{i.description}}</p>
+                    <p> {{i.price}} </p>
+                    <a href="{{url_for('editMenuItem', restaurant_id = restaurant.id, menu_id=i.id)}}"><h4>Edit Menu Item</h4></a>
+                    <a href="{{url_for('deleteMenuItem', restaurant_id = restaurant.id, menu_id=i.id)}}"><h4>Delete Menu Item</h4></a>
+                </div>
+                {% endfor %}
             </div>
         </div>
-        <div class="row">
-            {% for i in items %}
-            <div class="col-md-12 sepmen">
-                <h2>{{i.name}}</h2>
-                <p>{{i.description}}</p>
-                <p> {{i.price}} </p>
-                <a href=' {{url_for('editMenuItem', restaurant_id = restaurant.id, menu_id=i.id)}} '><h4>Edit Menu Item</h4></a>
-                <a href=' {{url_for('deleteMenuItem', restaurant_id = restaurant.id, menu_id=i.id)}} '><h4>Delete Menu Item</h4></a>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
 
-</body>
+    </body>
 
 </html>
