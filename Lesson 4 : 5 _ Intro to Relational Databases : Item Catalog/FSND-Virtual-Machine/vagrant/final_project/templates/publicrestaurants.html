@@ -3,8 +3,7 @@
 {% include "header.html" %}
             <div class="row">
                 <div class="col-md-4">
-                    {% with messages = get_flashed_messages() %}
-                    {% if messages %}
+                    {% with messages = get_flashed_messages() %} {% if messages %}
                     <ul>
                         {% for message in messages %}
                         <li>
@@ -12,24 +11,18 @@
                         </li>
                         {% endfor %}
                     </ul>
-                    {% endif %}
-                    {% endwith %}
+                    {% endif %} {% endwith %}
                 </div>
                 <div class="col-md-4">
                     <h1 class="text-center head">All Restaurants</h1>
                 </div>
                 <div class="col-md-4" style="height: inherit">
-                    <a href="{{url_for('newRestaurant')}}" class="btn1">Create New Restaurant</a>
                 </div>
             </div>
             <div class="row">
                 {% for r in restaurants %}
                 <div class="col-md-4 rest">
                     <span class="secret1"><a href=' {{url_for('showMenu', restaurant_id = r.id)}} '><h3 class="text-center restname">{{r.name}}</h3></a></span>
-                    <div class="secret">
-                        <a href="{{url_for('editRestaurant', restaurant_id = r.id)}}"><h4 class="control">Edit Restaurant</h4></a>
-                        <a href="{{url_for('deleteRestaurant', restaurant_id = r.id)}}"><h4 class="control">Delete Restaurant</h4></a>
-                    </div>
                 </div>
                 {% endfor %}
             </div>
