@@ -88,7 +88,7 @@ def fbconnect():
     user_id = getUserID(login_session['email'])
     if not user_id:
         user_id = createUser(login_session)
-    login_session['user_id'] = user_id
+        login_session['user_id'] = user_id
 
     output = ''
     output += '<h1>Welcome, '
@@ -189,11 +189,12 @@ def gconnect():
     login_session['username'] = data['name']
     login_session['picture'] = data['picture']
     login_session['email'] = data['email']
+    login_session['provider'] = 'google'
 
     user_id = getUserID(login_session['email'])
     if not user_id:
         user_id = createUser(login_session)
-    login_session['user_id'] = user_id
+        login_session['user_id'] = user_id
 
     output = ''
     output += '<h1>Welcome, '
@@ -228,11 +229,7 @@ def gdisconnect():
     print 'result is '
     print result
     if result['status'] == '200':
-        del login_session['access_token']
-        del login_session['gplus_id']
-        del login_session['username']
-        del login_session['email']
-        del login_session['picture']
+        login_session.clear()
         response = make_response(json.dumps('Successfully disconnected.'), 200)
         response.headers['Content-Type'] = 'application/json'
         return response
@@ -428,16 +425,13 @@ def disconnect():
     if 'provider' in login_session:
         if login_session['provider'] == 'google':
             gdisconnect()
-            del login_session['gplus_id']
-            del login_session['access_token']
+            login_session.clear()
+            flash("You have successfully been logged out.")
+            return redirect(url_for('showRestaurants'))
         if login_session['provider'] == 'facebook':
             fbdisconnect()
-            del login_session['facebook_id']
-        del login_session['username']
-        del login_session['email']
-        del login_session['picture']
-        del login_session['user_id']
-        del login_session['provider']
+            login_session.clear()
+        login_session.clear()
         flash("You have successfully been logged out.")
         return redirect(url_for('showRestaurants'))
     else:
