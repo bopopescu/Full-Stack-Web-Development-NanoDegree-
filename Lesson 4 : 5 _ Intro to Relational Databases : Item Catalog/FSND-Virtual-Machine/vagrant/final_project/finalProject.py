@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, jsonify, url_for, f
 from sqlalchemy import create_engine, asc
 from sqlalchemy.orm import sessionmaker
 from database_setup import Base, Restaurant, MenuItem, User
+from functools import wraps
 from flask import session as login_session
 import random
 import string
@@ -11,6 +12,7 @@ import httplib2
 import json
 from flask import make_response
 import requests
+import helper_dao
 
 
 # App engine and DB setup
@@ -85,9 +87,9 @@ def fbconnect():
     login_session['picture'] = data["data"]["url"]
 
     # See if user exists
-    user_id = getUserID(login_session['email'])
+    user_id = helper_dao.getUserID(login_session['email'])
     if not user_id:
-        user_id = createUser(login_session)
+        user_id = helper_dao.createUser(login_session)
         login_session['user_id'] = user_id
 
     output = ''
@@ -191,9 +193,9 @@ def gconnect():
     login_session['email'] = data['email']
     login_session['provider'] = 'google'
 
-    user_id = getUserID(login_session['email'])
+    user_id = helper_dao.getUserID(login_session['email'])
     if not user_id:
-        user_id = createUser(login_session)
+        user_id = helper_dao.createUser(login_session)
         login_session['user_id'] = user_id
 
     output = ''
@@ -239,33 +241,20 @@ def gdisconnect():
         response.headers['Content-Type'] = 'application/json'
         return response
 
-
-# User Helper Functions
-
-def createUser(login_session):
-    newUser = User(name=login_session['username'], email=login_session[
-                   'email'], picture=login_session['picture'])
-    session.add(newUser)
-    session.commit()
-    user = session.query(User).filter_by(email=login_session['email']).one()
-    return user.id
+# Checks if the user is loged in
 
 
-def getUserInfo(user_id):
-    user = session.query(User).filter_by(id=user_id).one()
-    return user
-
-
-def getUserID(email):
-    try:
-        user = session.query(User).filter_by(email=email).one()
-        return user.id
-    except:
-        return None
-
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'username' not in login_session:
+            return redirect(url_for('showLogin'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 # Page shows all restaurants
 # Loged-in user can edit/delete
+
 
 @app.route('/')
 @app.route('/restaurant/')
@@ -280,12 +269,11 @@ def showRestaurants():
 # Page to create new restaurant
 
 @app.route('/restaurant/new', methods=['GET', 'POST'])
+@login_required
 def newRestaurant():
-    if 'username' not in login_session:
-        return redirect('/login')
     if request.method == 'POST':
         newRestaurant = Restaurant(
-            name=request.form['name'], user_id=login_session['user_id'])
+            name=request.form['name'], user_id=login_session.get('user_id'))
         session.add(newRestaurant)
         session.commit()
         flash('New Restaurant "%s" Created!' % newRestaurant.name)
@@ -296,13 +284,13 @@ def newRestaurant():
 
 # Page to edit restaurant
 
+
 @app.route('/restaurant/<int:restaurant_id>/edit', methods=['GET', 'POST'])
+@login_required
 def editRestaurant(restaurant_id):
     editedRestaurant = session.query(
         Restaurant).filter_by(id=restaurant_id).one()
-    if 'username' not in login_session:
-        return redirect('/login')
-    if editedRestaurant.user_id != login_session['user_id']:
+    if editedRestaurant.user_id != login_session.get('user_id'):
         return "<script>function myFunction() {alert('You are not authorized to edit this restaurant. Please create your own restaurant in order to edit.');}</script><body onload='myFunction()''>"
     if request.method == 'POST':
         if request.form['name']:
@@ -316,12 +304,11 @@ def editRestaurant(restaurant_id):
 # Page to delete restaurant
 
 @app.route('/restaurant/<int:restaurant_id>/delete', methods=['GET', 'POST'])
+@login_required
 def deleteRestaurant(restaurant_id):
     restaurantToDelete = session.query(
         Restaurant).filter_by(id=restaurant_id).one()
-    if 'username' not in login_session:
-        return redirect('/login')
-    if restaurantToDelete.user_id != login_session['user_id']:
+    if restaurantToDelete.user_id != login_session.get('user_id'):
         return "<script>function myFunction() {alert('You are not authorized to delete this restaurant. Please create your own restaurant in order to delete.');}</script><body onload='myFunction()''>"
     if request.method == 'POST':
         session.delete(restaurantToDelete)
@@ -342,10 +329,10 @@ def deleteRestaurant(restaurant_id):
 @app.route('/restaurant/<int:restaurant_id>/menu')
 def showMenu(restaurant_id):
     restaurant = session.query(Restaurant).filter_by(id=restaurant_id).one()
-    creator = getUserInfo(restaurant.user_id)
+    creator = helper_dao.getUserInfo(restaurant.user_id)
     items = session.query(MenuItem).filter_by(
         restaurant_id=restaurant_id).all()
-    if 'username' not in login_session or creator.id != login_session['user_id']:
+    if 'username' not in login_session or creator.id != login_session.get('user_id'):
         return render_template('publicmenu.html', items=items, restaurant=restaurant, creator=creator)
     else:
         return render_template('menu.html', items=items, restaurant=restaurant, creator=creator)
@@ -354,11 +341,10 @@ def showMenu(restaurant_id):
 # Page to create new menu items
 
 @app.route('/restaurant/<int:restaurant_id>/menu/new/', methods=['GET', 'POST'])
+@login_required
 def newMenuItem(restaurant_id):
-    if 'username' not in login_session:
-        return redirect('/login')
     restaurant = session.query(Restaurant).filter_by(id=restaurant_id).one()
-    if login_session['user_id'] != restaurant.user_id:
+    if login_session.get('user_id') != restaurant.user_id:
         return "<script>function myFunction() {alert('You are not authorized to add menu items to this restaurant. Please create your own restaurant in order to add items.');}</script><body onload='myFunction()''>"
     if request.method == 'POST':
         newItem = MenuItem(name=request.form['name'], description=request.form[
@@ -374,12 +360,11 @@ def newMenuItem(restaurant_id):
 # Page to edit menu items
 
 @app.route('/restaurant/<int:restaurant_id>/menu/<int:menu_id>/edit/', methods=['GET', 'POST'])
+@login_required
 def editMenuItem(restaurant_id, menu_id):
-    if 'username' not in login_session:
-        return redirect('/login')
     editedItem = session.query(MenuItem).filter_by(id=menu_id).one()
     restaurant = session.query(Restaurant).filter_by(id=restaurant_id).one()
-    if login_session['user_id'] != restaurant.user_id:
+    if login_session.get('user_id') != restaurant.user_id:
         return "<script>function myFunction() {alert('You are not authorized to edit menu items to this restaurant. Please create your own restaurant in order to edit items.');}</script><body onload='myFunction()''>"
     if request.method == 'POST':
         if request.form['name']:
@@ -402,12 +387,11 @@ def editMenuItem(restaurant_id, menu_id):
 # Page to delete menu items
 
 @app.route('/restaurant/<int:restaurant_id>/menu/<int:menu_id>/delete/', methods=['GET', 'POST'])
+@login_required
 def deleteMenuItem(restaurant_id, menu_id):
-    if 'username' not in login_session:
-        return redirect('/login')
     restaurant = session.query(Restaurant).filter_by(id=restaurant_id).one()
     itemToDelete = session.query(MenuItem).filter_by(id=menu_id).one()
-    if login_session['user_id'] != restaurant.user_id:
+    if login_session.get('user_id') != restaurant.user_id:
         return "<script>function myFunction() {alert('You are not authorized to delete menu items to this restaurant. Please create your own restaurant in order to delete items.');}</script><body onload='myFunction()''>"
     if request.method == 'POST':
         session.delete(itemToDelete)
