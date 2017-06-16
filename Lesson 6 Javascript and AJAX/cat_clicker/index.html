@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <title>Cat Clicker</title>
+        <link rel="stylesheet" href="css/style.css">
+        <script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+    </head>
+
+    <body>
+        <div id="name1"></div>
+        <img src="img/cat.jpg" id="cat1" />
+        <div id="count1"></div>
+        <div id="name2"></div>
+        <img src="img/cat1.jpeg" id="cat2" />
+        <div id="count2"></div>
+        <script type="text/javascript">
+            var name_one = 'John';
+            $(document).ready(function() {
+                $('#name1').text(name_one);
+            });
+            var name_two = 'Smith';
+            $(document).ready(function() {
+                $('#name2').text(name_two);
+            });
+            var numclick_one = 0;
+            $(document).ready(function() {
+                $('#cat1').click(function(e) {
+                    numclick_one++;
+                    $('#count1').text(numclick_one);
+                });
+            });
+            var numclick_two = 0;
+            $(document).ready(function() {
+                $('#cat2').click(function(e) {
+                    numclick_two++;
+                    $('#count2').text(numclick_two);
+                });
+            });
+        </script>
+    </body>
+
+</html>
