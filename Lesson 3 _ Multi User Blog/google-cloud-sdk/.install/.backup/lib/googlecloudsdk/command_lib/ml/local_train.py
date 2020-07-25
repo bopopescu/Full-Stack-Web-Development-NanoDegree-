@@ -85,13 +85,13 @@ def RunDistributed(module_name,
   """
   ports = range(start_port, start_port + num_ps + num_workers + 1)
   cluster = {
-      'master': ['localhost:{port}'.format(port=ports[0])],
+      'main': ['localhost:{port}'.format(port=ports[0])],
       'ps': ['localhost:{port}'.format(port=p)
              for p in ports[1:num_ps + 1]],
       'worker': ['localhost:{port}'.format(port=p)
                  for p in ports[num_ps + 1:]]
   }
-  tasks = {'master': [], 'ps': [], 'worker': []}
+  tasks = {'main': [], 'ps': [], 'worker': []}
   try:
     for task_type, addresses in cluster.items():
       for i in range(len(addresses)):
@@ -102,7 +102,7 @@ def RunDistributed(module_name,
             task_type=task_type,
             index=i,
             cluster=cluster))
-    tasks['master'][0].wait()
+    tasks['main'][0].wait()
   finally:
     for process_list in tasks.values():
       for process in process_list:

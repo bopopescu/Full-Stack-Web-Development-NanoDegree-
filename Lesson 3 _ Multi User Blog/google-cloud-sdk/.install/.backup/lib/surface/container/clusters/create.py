@@ -184,7 +184,7 @@ class Create(base.CreateCommand):
     flags.AddClusterAutoscalingFlags(parser, suppressed=True)
     flags.AddLocalSSDFlag(parser, suppressed=True)
     flags.AddEnableKubernetesAlphaFlag(parser, suppressed=True)
-    flags.AddClusterVersionFlag(parser, 'master and nodes', True)
+    flags.AddClusterVersionFlag(parser, 'main and nodes', True)
 
   def ParseCreateOptions(self, args):
     if not args.scopes:
@@ -287,7 +287,7 @@ class CreateBeta(Create):
     flags.AddClusterAutoscalingFlags(parser, suppressed=True)
     flags.AddLocalSSDFlag(parser)
     flags.AddEnableKubernetesAlphaFlag(parser)
-    flags.AddClusterVersionFlag(parser, 'master and nodes')
+    flags.AddClusterVersionFlag(parser, 'main and nodes')
 
 
 @base.ReleaseTracks(base.ReleaseTrack.ALPHA)
@@ -300,4 +300,4 @@ class CreateAlpha(Create):
     flags.AddClusterAutoscalingFlags(parser)
     flags.AddLocalSSDFlag(parser)
     flags.AddEnableKubernetesAlphaFlag(parser)
-    flags.AddClusterVersionFlag(parser, 'master and nodes')
+    flags.AddClusterVersionFlag(parser, 'main and nodes')

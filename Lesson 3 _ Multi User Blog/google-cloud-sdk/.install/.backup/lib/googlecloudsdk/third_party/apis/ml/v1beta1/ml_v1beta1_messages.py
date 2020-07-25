@@ -518,14 +518,14 @@ class GoogleCloudMlV1beta1TrainingInput(_messages.Message):
   Fields:
     args: Optional. Command line arguments to pass to the program.
     hyperparameters: Optional. The set of Hyperparameters to tune.
-    masterType: Optional. Specifies the type of virtual machine to use for
-      your training job's master worker.  The following types are supported:
+    mainType: Optional. Specifies the type of virtual machine to use for
+      your training job's main worker.  The following types are supported:
       <dl>   <dt>standard</dt>   <dd>   A basic machine configuration suitable
       for training simple models with   small to moderate datasets.   </dd>
       <dt>large_model</dt>   <dd>   A machine with a lot of memory, specially
       suited for parameter servers   when your model is large (having many
       hidden layers or layers with very   large numbers of nodes).   </dd>
-      <dt>complex_model_s</dt>   <dd>   A machine suitable for the master and
+      <dt>complex_model_s</dt>   <dd>   A machine suitable for the main and
       workers of the cluster when your   model requires more computation than
       the standard machine can handle   satisfactorily.   </dd>
       <dt>complex_model_m</dt>   <dd>   A machine with roughly twice the
@@ -541,7 +541,7 @@ class GoogleCloudMlV1beta1TrainingInput(_messages.Message):
       type specified in `parameter_server_type`.
     parameterServerType: Optional. Specifies the type of virtual machine to
       use for your training job's parameter server.  The supported values are
-      the same as those described in the entry for `master_type`.  This value
+      the same as those described in the entry for `main_type`.  This value
       can only be used when `ScaleTier` is set to `CUSTOM`.
     pythonModule: Required. The Python module name to run after installing the
       packages.
@@ -555,7 +555,7 @@ class GoogleCloudMlV1beta1TrainingInput(_messages.Message):
       tier.
     workerType: Optional. Specifies the type of virtual machine to use for
       your training job's worker nodes.  The supported values are the same as
-      those described in the entry for `master_type`.  This value can only be
+      those described in the entry for `main_type`.  This value can only be
       used when `ScaleTier` is set to `CUSTOM`.
   """
 
@@ -576,7 +576,7 @@ class GoogleCloudMlV1beta1TrainingInput(_messages.Message):
         your own cluster specification. When you use this tier, you must also
         set valid values for `worker_count` and `parameter_server_count`, and
         you can specify the type of virtual machines to use for the different
-        types of workers by setting `master_type`, `worker_type`, and
+        types of workers by setting `main_type`, `worker_type`, and
         `parameter_server_type`.
     """
     BASIC = 0
@@ -588,7 +588,7 @@ class GoogleCloudMlV1beta1TrainingInput(_messages.Message):
 
   args = _messages.StringField(1, repeated=True)
   hyperparameters = _messages.MessageField('GoogleCloudMlV1beta1HyperparameterSpec', 2)
-  masterType = _messages.StringField(3)
+  mainType = _messages.StringField(3)
   packageUris = _messages.StringField(4, repeated=True)
   parameterServerCount = _messages.IntegerField(5)
   parameterServerType = _messages.StringField(6)
